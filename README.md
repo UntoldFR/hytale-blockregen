@@ -54,6 +54,11 @@ The block name must match the exact identifier used by the game (e.g.
 `Stone`, `Dirt`, `MyPlugin_MossyBlock`...). If the name is invalid, the
 command returns an error.
 
+```
+/blockregen help
+```
+-> Lists every `/blockregen` command with a one-line summary.
+
 ### Anti-abuse: blocks placed by a player don't regenerate
 
 By default, if a player places a block whose type has an active
@@ -70,22 +75,21 @@ normally generated) are not affected and regenerate as usual.
 it's enabled, blocks they place remain eligible for regeneration (useful
 for an admin who wants to rebuild an ore vein or a decoration). The new
 state is confirmed with a yellow chat message and an on-screen
-notification. Requires the auto-generated permission
-`<basePermission>.command.blockregen.admin`.
+notification. See [Permissions](#permissions) below for the required
+permission node.
 
 ### Ghost preview of blocks awaiting regeneration
 
 As soon as a configured block is broken, a transparent, collision-free
 preview of the upcoming block appears at its location, with floating text
 above it showing the remaining time ("Regenerates in 45s"). This preview
-is only visible to players with the `<basePermission>.ghosts` permission
-(e.g. `com.nopefr.blockregen.ghosts`) - other players simply see the
-empty spot, as usual. Grant this permission to your admin/OP group to use
-it.
+is only visible to players with the dedicated permission (see
+[Permissions](#permissions) below) - other players simply see the empty
+spot, as usual.
 
 ### CustomAreas integration (optional)
 
-If [CustomAreas](https://github.com/UntoldFR/hytale-customareas) is also
+If CustomAreas is also
 installed on the server, BlockRegen automatically registers a
 `BLOCKREGEN` flag for it - nothing to configure, and nothing changes if
 CustomAreas isn't installed.
@@ -104,12 +108,21 @@ blocks regenerate in 5s - everywhere else stays at 120s.
 
 ## Permissions
 
-- `com.nopefr.blockregen.command.blockregen` (and its subcommands, e.g.
-  `...blockregen.admin`, `...blockregen.list`): required to use
-  `/blockregen`. Grant it to the relevant players/roles, otherwise only
-  the console will be able to use it.
-- `com.nopefr.blockregen.ghosts`: lets a player see the ghost preview
-  described above. Grant it to your admin/OP group.
+Each command/subcommand generates its **own** permission node (chained
+off the base one), so a player may need more than just the root node
+depending on what your permission plugin does with dotted hierarchies -
+if it supports wildcards, granting `com.nopefr.blockregen.*` covers
+everything below at once.
+
+| Permission | Grants |
+|---|---|
+| `com.nopefr.blockregen.command.blockregen` | `/blockregen "<block>" <duration> [...]` and the `/blockregen <duration>` targeted variant |
+| `com.nopefr.blockregen.command.blockregen.list` | `/blockregen list` |
+| `com.nopefr.blockregen.command.blockregen.admin` | `/blockregen admin` |
+| `com.nopefr.blockregen.command.blockregen.help` | `/blockregen help` |
+| `com.nopefr.blockregen.ghosts` | Seeing the ghost preview markers (independent of the command permissions above - handy for admins/OPs who shouldn't necessarily edit rules) |
+
+Without any permission granted, only the console can use `/blockregen`.
 
 ## Persistence
 
