@@ -2,6 +2,31 @@
 
 All notable changes to the plugin are documented here.
 
+## [1.1.2]
+
+### Changed
+- The Floor toggle button (in each rule row and the "add a new rule"
+  panel) now shows the label "Floor" instead of "ON"/"OFF" - the
+  on/off state is still shown via its color.
+
+## [1.1.1]
+
+### Added
+- **`/blockregen help`**: lists every `/blockregen` command with a
+  one-line summary.
+
+## [1.1.0]
+
+### Added
+- **Optional CustomAreas integration**: if CustomAreas is
+  also installed, tag any region with the `BLOCKREGEN` flag
+  (`/carea <name> flag add BLOCKREGEN`) to give it its own regeneration
+  rules. The `/blockregen list` window gains a Global/area dropdown: an
+  area automatically inherits every global rule, but can override or add
+  rules for specific blocks. An **Independent** toggle next to the
+  dropdown lets an area ignore global rules entirely and use only its
+  own. Nothing changes if CustomAreas isn't installed on the server.
+
 ## [1.0.3]
 
 ### Fixed

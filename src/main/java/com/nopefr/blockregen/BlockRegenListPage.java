@@ -120,7 +120,7 @@ public class BlockRegenListPage extends InteractiveCustomUIPage<BlockRegenListPa
             boolean independent = plugin.isAreaIndependent(selectedScope);
             commandBuilder.appendInline(
                 "#IndependentToggle",
-                floorButtonMarkup("Independent", independent, tooltipText(BlockRegenMessages.UI_TOOLTIP_INDEPENDENT_TOGGLE))
+                toggleButtonMarkup("Independent", independent, independent ? "ON" : "OFF", tooltipText(BlockRegenMessages.UI_TOOLTIP_INDEPENDENT_TOGGLE))
             );
             eventBuilder.addEventBinding(
                 CustomUIEventBindingType.Activating,
@@ -168,7 +168,7 @@ public class BlockRegenListPage extends InteractiveCustomUIPage<BlockRegenListPa
         commandBuilder.clear("#AddFloorToggle");
         commandBuilder.appendInline(
             "#AddFloorToggle",
-            floorButtonMarkup("AddFloor", addNeedFloor, tooltipText(BlockRegenMessages.UI_TOOLTIP_ADD_FLOOR))
+            toggleButtonMarkup("AddFloor", addNeedFloor, "Floor", tooltipText(BlockRegenMessages.UI_TOOLTIP_ADD_FLOOR))
         );
 
         eventBuilder.addEventBinding(
@@ -268,7 +268,7 @@ public class BlockRegenListPage extends InteractiveCustomUIPage<BlockRegenListPa
             commandBuilder.set(selector + " #Radius.TooltipText", Message.translation(BlockRegenMessages.UI_TOOLTIP_ROW_RADIUS));
 
             String floorToggleSelector = selector + " #FloorToggle";
-            commandBuilder.appendInline(floorToggleSelector, floorButtonMarkup("Floor", needFloor, tooltipText(BlockRegenMessages.UI_TOOLTIP_ROW_FLOOR)));
+            commandBuilder.appendInline(floorToggleSelector, toggleButtonMarkup("Floor", needFloor, "Floor", tooltipText(BlockRegenMessages.UI_TOOLTIP_ROW_FLOOR)));
             eventBuilder.addEventBinding(
                 CustomUIEventBindingType.Activating,
                 floorToggleSelector + " #Floor",
@@ -355,22 +355,22 @@ public class BlockRegenListPage extends InteractiveCustomUIPage<BlockRegenListPa
     }
 
     /**
-     * Builds the single ON/OFF "need floor" toggle button as inline UI markup, following the same visual
-     * language as {@link #unitButtonMarkup} (blue background when ON so the state is visible at a glance).
+     * Builds an ON/OFF toggle button (fixed label, color-coded background/text for the current state)
+     * as inline UI markup, following the same visual language as {@link #unitButtonMarkup}.
      */
     @Nonnull
-    private static String floorButtonMarkup(@Nonnull String id, boolean on, @Nonnull String tooltip) {
+    private static String toggleButtonMarkup(@Nonnull String id, boolean on, @Nonnull String label, @Nonnull String tooltip) {
         String background = on ? "#3d7fda" : "#2b3542";
         String hoveredBackground = on ? "#4d8fea" : "#3a4657";
         String textColor = on ? "#ffffff" : "#96a9be";
         return "TextButton #" + id + " {"
-            + " Anchor: (Width: 42, Height: 26, Right: 8);"
+            + " Anchor: (Width: 50, Height: 26, Right: 8);"
             + " Padding: (Full: 4);"
             + " Style: ("
             + "   Default: (Background: " + background + ", LabelStyle: (TextColor: " + textColor + ", HorizontalAlignment: Center, VerticalAlignment: Center, FontSize: 12, RenderBold: true)),"
             + "   Hovered: (Background: " + hoveredBackground + ", LabelStyle: (TextColor: " + textColor + ", HorizontalAlignment: Center, VerticalAlignment: Center, FontSize: 12, RenderBold: true))"
             + " );"
-            + " Text: \"" + (on ? "ON" : "OFF") + "\";"
+            + " Text: \"" + label + "\";"
             + " TooltipText: \"" + tooltip + "\";"
             + " TextTooltipStyle: (Background: (TexturePath: \"Common/TooltipDefaultBackground.png\", Border: 24), MaxWidth: 220, LabelStyle: (Wrap: true, FontSize: 14), Padding: 12);"
             + "}";
