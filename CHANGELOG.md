@@ -2,37 +2,42 @@
 
 All notable changes to the plugin are documented here.
 
+## [1.0.3]
+
+### Fixed
+- Fixed a corrupted character in the `/blockregen admin` chat message (it
+  could show up as `â?"` on some clients).
+
+## [1.0.2]
+
+### Added
+- **Anti-abuse protection**: a block placed by a player no longer
+  regenerates when broken, even if a regeneration rule exists for its
+  type. This stops players from placing a ruled block just to farm it.
+  Only naturally-occurring world blocks (never placed by a player) are
+  affected by regeneration rules.
+- **`/blockregen admin`**: toggles a personal bypass for admins — while
+  enabled, blocks placed by that admin stay eligible for regeneration
+  (useful for rebuilding an ore vein or a decoration). The new state is
+  confirmed with a yellow chat message and an on-screen notification.
+
 ## [1.0.1]
 
 ### Fixed
-- **Ghost regeneration**: if a player places a new block where a broken
-  block used to be before its regeneration delay ends, the pending
-  regeneration is now cancelled (the ghost marker and its scheduled task
-  are removed) instead of later overwriting the block the player just
+- If a player places a new block where a broken block used to be before
+  its regeneration timer runs out, the pending regeneration is now
+  cancelled instead of later overwriting the block the player just
   placed.
 
 ### Added
-- **"Need floor" option**: new `--floor` flag on `/blockregen`
-  (`/blockregen "Poppy" 120 --floor`), plus a matching ON/OFF button in the
-  `/blockregen list` window (per row and in the add panel). When enabled,
-  the block only regenerates if there's a support (a non-air block)
-  directly beneath the target position; otherwise that regeneration cycle
-  is simply skipped.
-- **Random scatter radius**: new `radius` argument on `/blockregen`
-  (`/blockregen "Poppy" 120 --radius 3`), plus a matching number field in
-  the UI. Lets a block regenerate at a random valid spot within X blocks of
-  the original break point (e.g. a flower respawning slightly further
-  away), respecting "need floor" when enabled and never overwriting a
-  block that's already there.
-
-### Technical
-- New file `BlockRegenPlaceListener.java`: listens for block placements
-  (`PlaceBlockEvent`) to trigger the cancellation above.
-- `BlockRegenPlugin` now tracks each pending regeneration by position
-  (world + coordinates) so it can be cancelled individually.
-- New optional `NeedFloor` and `Radius` keys in `BlockRegenRules.json`,
-  alongside the unchanged `Rules` (delays) key: no migration needed,
-  existing configs keep working as-is.
+- **"Need floor" option**: new `--floor` flag on `/blockregen`, plus a
+  matching toggle in the `/blockregen list` window. When enabled, the
+  block only regenerates if there's a solid block directly beneath the
+  target position.
+- **Random scatter radius**: new `radius` option on `/blockregen`, plus a
+  matching field in the UI. Lets a block regenerate at a random valid spot
+  within X blocks of the original break point (e.g. a flower respawning
+  slightly further away), never overwriting a block that's already there.
 
 ## [1.0.0]
 
