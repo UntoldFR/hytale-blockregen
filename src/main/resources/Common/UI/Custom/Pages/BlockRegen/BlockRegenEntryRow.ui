@@ -1,0 +1,59 @@
+$C = "../../Common.ui";
+
+Group {
+  LayoutMode: Left;
+  Anchor: (Bottom: 8);
+  Background: (Color: #000000(0.15));
+  Padding: (Full: 8);
+
+  ItemGrid #Icon {
+    Anchor: (Width: 40, Height: 40, Right: 10);
+    SlotsPerRow: 1;
+    Style: (
+      SlotSize: 40,
+      SlotIconSize: 40,
+      SlotSpacing: 0,
+      SlotBackground: "../../Common/BlockSelectorSlotBackground.png"
+    );
+  }
+
+  Label #Name {
+    FlexWeight: 1;
+    Style: (...$C.@DefaultLabelStyle, VerticalAlignment: Center, RenderBold: true);
+  }
+
+  $C.@NumberField #Delay {
+    @Anchor = (Width: 70, Right: 6);
+    Format: (MaxDecimalPlaces: 0, Step: 1);
+    TooltipText: "Regeneration delay, in the unit selected below (click away to apply)";
+    TextTooltipStyle: $C.@DefaultTextTooltipStyle;
+  }
+
+  // The 3 unit buttons (S/M/H) are injected dynamically by BlockRegenListPage
+  // so the currently selected one can get a distinct (blue) background.
+  Group #UnitToggle {
+    LayoutMode: Left;
+    Anchor: (Right: 8);
+  }
+
+  $C.@NumberField #Radius {
+    @Anchor = (Width: 55, Right: 6);
+    Format: (MaxDecimalPlaces: 0, Step: 1);
+    TooltipText: "Scatter radius in blocks around the break point (0 = exact spot, click away to apply)";
+    TextTooltipStyle: $C.@DefaultTextTooltipStyle;
+  }
+
+  // Single ON/OFF "need floor" toggle button, injected dynamically by
+  // BlockRegenListPage (same mechanism as #UnitToggle above).
+  Group #FloorToggle {
+    LayoutMode: Left;
+    Anchor: (Right: 8);
+  }
+
+  $C.@CancelTextButton #Remove {
+    @Text = "X";
+    Anchor: (Width: 30, Height: 26, Top: 6);
+    TooltipText: "Remove this regeneration rule";
+    TextTooltipStyle: $C.@DefaultTextTooltipStyle;
+  }
+}

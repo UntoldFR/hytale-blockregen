@@ -1,0 +1,97 @@
+# BlockRegen - English (en-US) text.
+#
+# Every sentence the plugin shows to players (chat messages, the ghost
+# marker text, the "list" UI window) is a "key = value" line here. Edit the
+# text after the "=" to reword it; the key itself (before "=") must stay
+# untouched since the Java code looks messages up by that key.
+#
+# {name} placeholders (e.g. {block}, {duration}) are substituted at runtime -
+# keep them somewhere in the text, but you can move them around freely.
+#
+# This file is loaded by the game's own translation system, so editing it
+# does NOT require recompiling the plugin. On a dev server pointing at this
+# resources folder, changes are picked up live; otherwise they apply on the
+# next rebuild/restart.
+#
+# To add another language, copy this file to
+# Server/Languages/<language-code>/blockregen.lang (e.g. fr-FR) and translate
+# the values. Each player then sees messages in their own client language
+# automatically wherever that is supported (chat messages and the UI window;
+# see the note on ghost-marker text below).
+
+# --- Command & argument descriptions (shown by /blockregen help) ---
+command.blockregen.description = Configure automatic regeneration for a block type
+command.blockregen.arg.block = Block name/ID (e.g. Stone)
+command.blockregen.arg.duration = Delay before regeneration (e.g. 90, 90s, 5m, 2h; minutes if no unit)
+command.blockregen.flag.remove = Removes the rule instead of creating it
+command.blockregen.flag.floor = Requires a solid block underneath before regenerating
+command.blockregen.arg.radius = Radius (in blocks) to scatter the respawn within, around the break point (0 = exact spot)
+command.list.description = Lists the blocks currently configured to regenerate, with their delay
+command.target.description = Configure regeneration for the block you are currently looking at
+command.admin.description = Toggle admin bypass: blocks you place will still be able to regenerate
+
+# --- Chat messages ---
+message.unknownBlock = Unknown block: "{block}". Check the exact block identifier.
+message.unknownBlockShort = Unknown block: "{block}".
+message.ruleRemoved = Regeneration rule removed for "{block}".
+message.noRuleExisted = No rule existed for "{block}".
+message.invalidDuration = Invalid duration "{input}". Use a number optionally followed by h, m or s (e.g. 90, 90s, 5m, 2h).
+message.ruleSet = Broken "{block}" blocks will now regenerate after {duration}.
+message.unableToResolvePlayer = Unable to resolve your player entity.
+message.noActiveRules = No active regeneration rule.
+message.activeRulesHeader = Blocks with active regeneration ({count}) :
+message.pickBlockFirst = Pick a block first.
+message.enterDelayFirst = Enter a delay greater than 0 first.
+message.cancelled = Cancelled.
+message.confirmPrompt = Please reply Y to confirm or N to cancel.
+message.onlyPlayerCanTarget = Only a player can use this command without specifying a block name.
+message.noBlockInSight = No block found in your line of sight.
+message.confirmTargetPrompt = Confirm setting a regeneration delay of {duration} on block "{block}"? Reply Y to confirm or N to cancel.
+
+# Floating text above a broken block waiting to regenerate. Note: unlike the
+# messages above, this one is resolved on the server in English only (the
+# game's nameplate text doesn't support per-player translation), so it will
+# still change if you edit it here, but the same text is shown to everyone.
+message.ghostNameplate = {block}: regenerates in {duration}
+
+# --- "/blockregen admin" (anti-abuse bypass toggle) ---
+# Anti-abuse: by default, a block placed by a player is never scheduled to
+# regenerate if broken later, even if a rule exists for its type (this stops
+# players from placing a ruled block just to farm it). "/blockregen admin"
+# lets an admin toggle a personal bypass so their own placements stay
+# eligible for regeneration (e.g. to rebuild an ore vein or a decoration).
+message.onlyPlayerCanAdmin = Only a player can toggle admin bypass mode.
+message.adminBypassOnTitle = Admin bypass: ON
+message.adminBypassOffTitle = Admin bypass: OFF
+message.adminBypassOn = Blocks you place from now on will still be able to regenerate.
+message.adminBypassOff = Blocks you place from now on will NOT regenerate (anti-abuse protection).
+
+# --- "/blockregen list" UI window ---
+ui.noBlockConfigured = No block is currently configured to regenerate.
+ui.addButton = ADD
+ui.removeButton = X
+ui.tooltip.pickBlock = Pick any block (vanilla or from a mod) to add a new rule for
+ui.tooltip.addDelay = Delay before the picked block regenerates
+ui.tooltip.addRule = Add a regeneration rule for the picked block
+ui.tooltip.rowDelay = Regeneration delay, in the unit selected below (click away to apply)
+ui.tooltip.removeRule = Remove this regeneration rule
+
+# S/M/H unit toggle tooltips. Like the ghost marker text above, these are
+# baked into the window in English on the server and not re-translated
+# per-player.
+ui.tooltip.unitSeconds = Enter the delay in seconds
+ui.tooltip.unitMinutes = Enter the delay in minutes
+ui.tooltip.unitHours = Enter the delay in hours
+ui.tooltip.showUnitSeconds = Show/edit the delay in seconds
+ui.tooltip.showUnitMinutes = Show/edit the delay in minutes
+ui.tooltip.showUnitHours = Show/edit the delay in hours
+
+# Floor toggle and radius field, per row and in the "add a new rule" panel.
+ui.tooltip.rowFloor = Toggle: require a solid block underneath before this block regenerates
+ui.tooltip.rowRadius = Radius (in blocks) to scatter the respawn within around the break point (0 = exact spot)
+ui.tooltip.addFloor = Toggle: require a solid block underneath before the picked block regenerates
+ui.tooltip.addRadius = Radius (in blocks) to scatter the respawn within around the break point (0 = exact spot)
+
+# Window title. This one is still set directly in the .ui file (see
+# src/main/resources/Common/UI/Custom/Pages/BlockRegen/BlockRegenListPage.ui,
+# the "@Text" line under #Title) rather than here, so edit it there if needed.
