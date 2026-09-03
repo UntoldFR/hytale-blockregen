@@ -83,86 +83,18 @@ is only visible to players with the `<basePermission>.ghosts` permission
 empty spot, as usual. Grant this permission to your admin/OP group to use
 it.
 
-## Requirements
+## Permissions
 
-- Java 25 (Adoptium/Temurin recommended)
-- IntelliJ IDEA
-- `HytaleServer.jar` (automatically provided via the
-  `com.azuredoom.hytale-tools` Gradle plugin used in `build.gradle.kts`)
+- `com.nopefr.blockregen.command.blockregen` (and its subcommands, e.g.
+  `...blockregen.admin`, `...blockregen.list`): required to use
+  `/blockregen`. Grant it to the relevant players/roles, otherwise only
+  the console will be able to use it.
+- `com.nopefr.blockregen.ghosts`: lets a player see the ghost preview
+  described above. Grant it to your admin/OP group.
 
-## Getting started in IntelliJ
+## Persistence
 
-1. Open this folder as a Gradle project in IntelliJ (`File > Open`).
-2. Make sure the project SDK is set to Java 25.
-3. Adjust in `gradle.properties`: `group`, `mod_id`, `mod_name`,
-   `main_class`, `mod_author`.
-4. Sync Gradle (IntelliJ will suggest it automatically, otherwise use the
-   "Reload All Gradle Projects" button).
-5. Prepare the dev environment (downloads the server, generates the
-   manifest, etc.):
-   ```
-   ./gradlew setupHytaleDev
-   ```
-6. Build the plugin:
-   ```
-   ./gradlew build
-   ```
-   The JAR is in `build/libs/`.
-7. To test locally:
-   ```
-   ./gradlew runServer
-   ```
-   or copy the built JAR into an existing Hytale server's `mods/` folder.
-
-## Project structure
-
-```
-hytale-blockregen/
-├── settings.gradle.kts
-├── build.gradle.kts
-├── gradle.properties
-├── src/main/java/com/nopefr/blockregen/
-│   ├── BlockRegenPlugin.java        # main class: command, listener, chat listening, persistence
-│   ├── BlockRegenCommand.java       # /blockregen "<block>" <duration> [--remove] [--floor] [radius] command
-│   ├── BlockRegenListCommand.java   # /blockregen list subcommand (opens BlockRegenListPage for a player)
-│   ├── BlockRegenAdminCommand.java  # /blockregen admin subcommand (anti-abuse bypass toggle)
-│   ├── BlockRegenListPage.java      # custom UI window listing the rules (icon, editable delay, S/M/H, floor, radius, delete)
-│   ├── BlockRegenTargetCommand.java # /blockregen <duration> variant (targeted block + confirmation)
-│   ├── BlockRegenListener.java      # listens for block breaks, schedules regeneration, spawns the ghost
-│   ├── BlockRegenPlaceListener.java # listens for block placement: cancels pending regen, anti-abuse marking
-│   ├── BlockRegenGhostMarker.java   # marker component for ghost preview entities
-│   ├── BlockRegenGhostVisibilitySystem.java # hides ghosts from players without the dedicated permission
-│   └── DurationParser.java          # duration parsing/formatting (h/m/s, minutes by default)
-└── src/main/resources/Common/UI/Custom/Pages/BlockRegen/
-    ├── BlockRegenListPage.ui        # window layout (container + scrollable list)
-    └── BlockRegenEntryRow.ui        # row layout (icon, name, delay, S/M/H, floor, radius, X button)
-```
-
-## Things to check / adapt (important)
-
-Hytale is in early access and its modding API evolves fast (regular
-updates). This code was compiled and verified against the decompiled
-sources + JavaDoc of server 0.6.3, but might need small adjustments on a
-future version:
-
-- **`build.gradle.kts`**: the exact syntax of the `hytaleTools { ... }`
-  block from the `com.azuredoom.hytale-tools` plugin may differ slightly
-  depending on its version. The plugin's wiki
-  (`github.com/AzureDoom/Hytale-Gradle-Plugin/wiki`) is the reference.
-- **Persistence**: rules (`/blockregen`) are saved to disk
-  (`BlockRegenRules.json` file in the plugin's data folder) via the
-  plugin's native `Config`/`Codec` system, and reloaded automatically on
-  server startup. Only pending regenerations (block broken, timer
-  running) and pending Y/N confirmations are lost if the server restarts
-  before they complete.
-- **Permission**: the command automatically generates the permission node
-  `com.nopefr.blockregen.command.blockregen` (adjust based on your
-  `group`/`mod_id`). Grant this permission to the relevant players/roles,
-  otherwise only the console will be able to use it.
-
-## Possible improvements
-
-- Store the "original" block before replacement (if you want to replace
-  it with a different temporary block, e.g. break -> empty spot -> stone
-  after 120s).
-- Also persist pending regenerations and confirmations (see above).
+Rules set via `/blockregen` are saved to disk and reloaded automatically
+on server startup. Only regenerations already in progress (block broken,
+timer running) and pending Y/N chat confirmations are lost if the server
+restarts before they complete.
