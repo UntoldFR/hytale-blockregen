@@ -64,6 +64,21 @@ public class BlockRegenPlugin extends JavaPlugin {
     // du bloc casse.
     private Map<String, Integer> radiusRules;
 
+    // Surcharges par zone CustomAreas (nom de l'area -> blockId -> valeur) :
+    // une area taguee BLOCKREGEN herite des regles globales ci-dessus mais
+    // peut ajouter/remplacer une regle pour un blockId donne. Voir
+    // resolveEffectiveRule() pour la logique de resolution.
+    private Map<String, Map<String, Integer>> areaDelayRules;
+    private Map<String, Map<String, Boolean>> areaNeedFloorRules;
+    private Map<String, Map<String, Integer>> areaRadiusRules;
+
+    // Nom d'area -> true si elle ignore entierement les regles globales et
+    // n'utilise que ses propres regles (voir resolveEffectiveRule()).
+    private Map<String, Boolean> independentAreas;
+
+    // Pont reflectif (optionnel) vers le plugin CustomAreas, voir CustomAreasBridge.
+    private final CustomAreasBridge customAreasBridge = new CustomAreasBridge(this);
+
     // UUID du joueur -> demande de regle en attente de confirmation Y/N dans le chat
     private final Map<UUID, PendingRegen> pendingConfirmations = new ConcurrentHashMap<>();
 
@@ -100,6 +115,10 @@ public class BlockRegenPlugin extends JavaPlugin {
         regenRules = config.get().rules;
         needFloorRules = config.get().needFloor;
         radiusRules = config.get().radius;
+        areaDelayRules = config.get().areaDelay;
+        areaNeedFloorRules = config.get().areaNeedFloor;
+        areaRadiusRules = config.get().areaRadius;
+        independentAreas = config.get().independentAreas;
 
         // Commande /blockregen "Nom du block" 120 (inclut la sous-commande
         // /blockregen admin, voir BlockRegenAdminCommand)
@@ -133,6 +152,10 @@ public class BlockRegenPlugin extends JavaPlugin {
         ScheduledFuture<Void> ghostRefreshTask = (ScheduledFuture<Void>) HytaleServer.SCHEDULED_EXECUTOR
             .scheduleAtFixedRate(this::refreshGhostNameplates, 1, 1, TimeUnit.SECONDS);
         getTaskRegistry().registerTask(ghostRefreshTask);
+
+        // Enregistre le flag BLOCKREGEN aupres de CustomAreas s'il est present sur
+        // le serveur (sans effet, sans erreur, si absent - voir CustomAreasBridge).
+        customAreasBridge.ensureFlagRegistered();
 
         getLogger().at(Level.INFO).log("BlockRegen enabled (%d rule(s) loaded).", regenRules.size());
     }
@@ -204,6 +227,107 @@ public class BlockRegenPlugin extends JavaPlugin {
     /** Rayon (en blocs) configure pour ce blockId (0 par defaut = position exacte du bloc casse). */
     public int getRadiusFor(String blockId) {
         return radiusRules.getOrDefault(blockId, 0);
+    }
+
+    /** The reflective, optional bridge to the CustomAreas plugin (never null; check {@code isPresent()}). */
+    @Nonnull
+    public CustomAreasBridge getCustomAreasBridge() {
+        return customAreasBridge;
+    }
+
+    /**
+     * Resolves the rule that actually applies to this blockId at the given scope: {@code areaName}
+     * null means "no BLOCKREGEN area at this position" and falls back to the global rule exactly like
+     * before this feature existed. A non-null areaName looks up that area's own override first; if it
+     * has none and isn't marked independent, falls back to the global rule; independent areas with no
+     * own rule for this block resolve to null (no regeneration there), ignoring the global rule.
+     */
+    @Nullable
+    public EffectiveRule resolveEffectiveRule(@Nullable String areaName, @Nonnull String blockId) {
+        if (areaName != null) {
+            EffectiveRule override = getAreaRule(areaName, blockId);
+            if (override != null) {
+                return override;
+            }
+            if (isAreaIndependent(areaName)) {
+                return null;
+            }
+        }
+        Integer delay = regenRules.get(blockId);
+        if (delay == null) {
+            return null;
+        }
+        return new EffectiveRule(delay, needFloorRules.getOrDefault(blockId, false), radiusRules.getOrDefault(blockId, 0));
+    }
+
+    /** This area's own explicit rule for this blockId, or null if it has none (falls back to global, unless independent). */
+    @Nullable
+    public EffectiveRule getAreaRule(@Nonnull String areaName, @Nonnull String blockId) {
+        Integer delay = areaDelayRules.getOrDefault(areaName, Map.of()).get(blockId);
+        if (delay == null) {
+            return null;
+        }
+        boolean needFloor = areaNeedFloorRules.getOrDefault(areaName, Map.of()).getOrDefault(blockId, false);
+        int radius = areaRadiusRules.getOrDefault(areaName, Map.of()).getOrDefault(blockId, 0);
+        return new EffectiveRule(delay, needFloor, radius);
+    }
+
+    /** Block ids this area has its own explicit rule for (does not include inherited global block ids). */
+    @Nonnull
+    public Set<String> getAreaRuleBlockIds(@Nonnull String areaName) {
+        return areaDelayRules.getOrDefault(areaName, Map.of()).keySet();
+    }
+
+    /** Sets (or updates) this area's own delay override for this blockId, and persists. */
+    public void setAreaRule(@Nonnull String areaName, @Nonnull String blockId, int delaySeconds) {
+        areaDelayRules.computeIfAbsent(areaName, k -> new ConcurrentHashMap<>()).put(blockId, delaySeconds);
+        persist();
+    }
+
+    /** Sets this area's own "need floor" override for this blockId, and persists. */
+    public void setAreaNeedFloor(@Nonnull String areaName, @Nonnull String blockId, boolean needFloor) {
+        if (needFloor) {
+            areaNeedFloorRules.computeIfAbsent(areaName, k -> new ConcurrentHashMap<>()).put(blockId, true);
+        } else {
+            areaNeedFloorRules.getOrDefault(areaName, Map.of()).remove(blockId);
+        }
+        persist();
+    }
+
+    /** Sets this area's own scatter radius override for this blockId, and persists. */
+    public void setAreaRadius(@Nonnull String areaName, @Nonnull String blockId, int radius) {
+        if (radius > 0) {
+            areaRadiusRules.computeIfAbsent(areaName, k -> new ConcurrentHashMap<>()).put(blockId, radius);
+        } else {
+            areaRadiusRules.getOrDefault(areaName, Map.of()).remove(blockId);
+        }
+        persist();
+    }
+
+    /** Removes this area's own override for this blockId (it then falls back to inheriting global, unless independent). */
+    public void removeAreaRule(@Nonnull String areaName, @Nonnull String blockId) {
+        areaDelayRules.getOrDefault(areaName, Map.of()).remove(blockId);
+        areaNeedFloorRules.getOrDefault(areaName, Map.of()).remove(blockId);
+        areaRadiusRules.getOrDefault(areaName, Map.of()).remove(blockId);
+        persist();
+    }
+
+    /** Toggles whether this area ignores global rules entirely (true = only its own rules apply), and persists. */
+    public void setAreaIndependent(@Nonnull String areaName, boolean independent) {
+        if (independent) {
+            independentAreas.put(areaName, true);
+        } else {
+            independentAreas.remove(areaName);
+        }
+        persist();
+    }
+
+    public boolean isAreaIndependent(@Nonnull String areaName) {
+        return independentAreas.getOrDefault(areaName, false);
+    }
+
+    /** Rule that actually applies for a given block/scope, resolved by {@link #resolveEffectiveRule}. */
+    public record EffectiveRule(int delaySeconds, boolean needFloor, int radius) {
     }
 
     private void persist() {
@@ -387,10 +511,32 @@ public class BlockRegenPlugin extends JavaPlugin {
             .add()
             .append(new KeyedCodec<>("Radius", new MapCodec<Integer, Map<String, Integer>>(Codec.INTEGER, ConcurrentHashMap::new, false), false), (c, m) -> c.radius = m, c -> c.radius)
             .add()
+            // Per-CustomAreas-area overrides (nom d'area -> blockId -> valeur),
+            // et zones marquees "independantes". Cles optionnelles : absentes
+            // sur un config existant, elles restent simplement des maps vides.
+            .append(new KeyedCodec<>("AreaDelay", new MapCodec<Map<String, Integer>, Map<String, Map<String, Integer>>>(
+                new MapCodec<Integer, Map<String, Integer>>(Codec.INTEGER, ConcurrentHashMap::new, false), ConcurrentHashMap::new, false), false),
+                (c, m) -> c.areaDelay = m, c -> c.areaDelay)
+            .add()
+            .append(new KeyedCodec<>("AreaNeedFloor", new MapCodec<Map<String, Boolean>, Map<String, Map<String, Boolean>>>(
+                new MapCodec<Boolean, Map<String, Boolean>>(Codec.BOOLEAN, ConcurrentHashMap::new, false), ConcurrentHashMap::new, false), false),
+                (c, m) -> c.areaNeedFloor = m, c -> c.areaNeedFloor)
+            .add()
+            .append(new KeyedCodec<>("AreaRadius", new MapCodec<Map<String, Integer>, Map<String, Map<String, Integer>>>(
+                new MapCodec<Integer, Map<String, Integer>>(Codec.INTEGER, ConcurrentHashMap::new, false), ConcurrentHashMap::new, false), false),
+                (c, m) -> c.areaRadius = m, c -> c.areaRadius)
+            .add()
+            .append(new KeyedCodec<>("IndependentAreas", new MapCodec<Boolean, Map<String, Boolean>>(Codec.BOOLEAN, ConcurrentHashMap::new, false), false),
+                (c, m) -> c.independentAreas = m, c -> c.independentAreas)
+            .add()
             .build();
 
         private Map<String, Integer> rules = new ConcurrentHashMap<>();
         private Map<String, Boolean> needFloor = new ConcurrentHashMap<>();
         private Map<String, Integer> radius = new ConcurrentHashMap<>();
+        private Map<String, Map<String, Integer>> areaDelay = new ConcurrentHashMap<>();
+        private Map<String, Map<String, Boolean>> areaNeedFloor = new ConcurrentHashMap<>();
+        private Map<String, Map<String, Integer>> areaRadius = new ConcurrentHashMap<>();
+        private Map<String, Boolean> independentAreas = new ConcurrentHashMap<>();
     }
 }

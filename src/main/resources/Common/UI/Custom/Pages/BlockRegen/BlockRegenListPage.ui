@@ -15,6 +15,28 @@ $C.@PageOverlay {
     #Content {
       LayoutMode: Top;
 
+      // Scope selector: "Global" or a CustomAreas area flagged BLOCKREGEN.
+      // Always has at least a "Global" entry - if CustomAreas isn't
+      // installed this just behaves as a single-choice dropdown, and the
+      // rest of the page is unaffected. #IndependentToggle is injected
+      // dynamically (like #AddUnitToggle below) only when an area is
+      // selected.
+      Group #ScopeSection {
+        LayoutMode: Left;
+        Anchor: (Bottom: 8, Height: 40);
+        Background: (Color: #000000(0.15));
+        Padding: (Full: 8);
+
+        $C.@DropdownBox #ScopeDropdown {
+          @Anchor = (Right: 8);
+        }
+
+        Group #IndependentToggle {
+          LayoutMode: Left;
+          Anchor: (Right: 8);
+        }
+      }
+
       // Add a new rule by picking any block (vanilla or modded) from a
       // searchable dropdown instead of having to target it in-game.
       Group #AddSection {

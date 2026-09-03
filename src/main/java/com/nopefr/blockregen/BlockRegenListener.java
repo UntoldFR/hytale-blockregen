@@ -97,24 +97,28 @@ public class BlockRegenListener extends EntityEventSystem<EntityStore, BreakBloc
         // trainer indefiniment a cette position.
         boolean wasPlayerPlaced = plugin.consumePlayerPlacedMark(world, x, y, z);
 
-        Integer delaySeconds = plugin.getDelayFor(brokenType.getId());
-        if (delaySeconds == null) {
-            return; // aucune regle enregistree pour ce type de bloc
+        // Si une area CustomAreas taguee BLOCKREGEN couvre cette position, ses
+        // regles (heritees des globales, ou propres si elle en a) s'appliquent
+        // a la place ; sinon (ou si CustomAreas n'est pas installe) on retombe
+        // sur les regles globales, comportement inchange.
+        String areaName = plugin.getCustomAreasBridge().findBlockRegenAreaAt(world.getName(), x, y, z);
+        BlockRegenPlugin.EffectiveRule rule = plugin.resolveEffectiveRule(areaName, brokenType.getId());
+        if (rule == null) {
+            return; // aucune regle applicable pour ce type de bloc a cette position
         }
 
         if (wasPlayerPlaced) {
             return; // anti-abus : bloc pose par un joueur (sans bypass admin), pas de regeneration
         }
 
+        int delaySeconds = rule.delaySeconds();
         long respawnAtMillis = System.currentTimeMillis() + delaySeconds * 1000L;
         Ref<EntityStore> ghostRef = spawnGhost(store, commandBuffer, x, y, z, brokenType, delaySeconds);
         if (ghostRef != null) {
             plugin.trackPendingGhost(world, ghostRef, brokenType.getId(), respawnAtMillis);
         }
 
-        boolean needFloor = plugin.isNeedFloorFor(brokenType.getId());
-        int radius = plugin.getRadiusFor(brokenType.getId());
-        scheduleRegen(world, x, y, z, brokenType, delaySeconds, needFloor, radius, ghostRef);
+        scheduleRegen(world, x, y, z, brokenType, delaySeconds, rule.needFloor(), rule.radius(), ghostRef);
     }
 
     /**

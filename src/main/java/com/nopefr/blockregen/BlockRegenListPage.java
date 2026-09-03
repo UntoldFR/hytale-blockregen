@@ -27,7 +27,8 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.TreeMap;
+import java.util.Set;
+import java.util.TreeSet;
 
 /**
  * Custom UI window opened by "/blockregen list" (player-only). Shows every
@@ -46,6 +47,10 @@ public class BlockRegenListPage extends InteractiveCustomUIPage<BlockRegenListPa
     private static final String UNIT_MINUTES = "M";
     private static final String UNIT_HOURS = "H";
 
+    // Special "scope" dropdown entry meaning "edit the global rules" (as opposed to a CustomAreas
+    // area name). Never a valid area name since CustomAreas area names come from user input there.
+    private static final String SCOPE_GLOBAL = "Global";
+
     private final BlockRegenPlugin plugin;
 
     // blockId -> unit currently displayed for that row in this window session (not persisted).
@@ -57,6 +62,11 @@ public class BlockRegenListPage extends InteractiveCustomUIPage<BlockRegenListPa
     // "Need floor" state currently selected in the "add a new rule" panel (not persisted).
     private boolean addNeedFloor = false;
 
+    // Currently selected scope: null = Global, otherwise a CustomAreas area name. Drives which
+    // rules buildList()/addRule() read and write. Not persisted - resets to Global each time the
+    // window is (re)opened.
+    private String selectedScope = null;
+
     public BlockRegenListPage(@Nonnull PlayerRef playerRef, @Nonnull BlockRegenPlugin plugin) {
         super(playerRef, CustomPageLifetime.CanDismiss, ListPageEventData.CODEC);
         this.plugin = plugin;
@@ -67,8 +77,58 @@ public class BlockRegenListPage extends InteractiveCustomUIPage<BlockRegenListPa
         @Nonnull Ref<EntityStore> ref, @Nonnull UICommandBuilder commandBuilder, @Nonnull UIEventBuilder eventBuilder, @Nonnull Store<EntityStore> store
     ) {
         commandBuilder.append(PAGE_FILE);
+        buildScopeSelector(commandBuilder, eventBuilder);
         buildAddSection(commandBuilder, eventBuilder);
         buildList(commandBuilder, eventBuilder);
+    }
+
+    /**
+     * Populates the Global/area scope dropdown (always shown, with at least "Global" as an entry)
+     * and, when an area is selected, its "Independent" toggle. When CustomAreas isn't installed (or
+     * has no BLOCKREGEN-flagged areas), the dropdown simply has a single "Global" entry and behaves
+     * exactly like the page did before this feature existed.
+     */
+    private void buildScopeSelector(@Nonnull UICommandBuilder commandBuilder, @Nonnull UIEventBuilder eventBuilder) {
+        CustomAreasBridge bridge = plugin.getCustomAreasBridge();
+        bridge.ensureFlagRegistered(); // opportunistic retry, in case CustomAreas loaded after this plugin's setup()
+
+        List<DropdownEntryInfo> scopeEntries = new ArrayList<>();
+        scopeEntries.add(new DropdownEntryInfo(LocalizableString.fromString(SCOPE_GLOBAL), SCOPE_GLOBAL));
+        for (String areaName : bridge.getBlockRegenAreaNames()) {
+            scopeEntries.add(new DropdownEntryInfo(LocalizableString.fromString(areaName), areaName));
+        }
+
+        // If the selected area lost its BLOCKREGEN flag, was deleted, or CustomAreas is no longer
+        // present, fall back to Global rather than pointing at a scope that no longer exists.
+        if (selectedScope != null && scopeEntries.stream().noneMatch(e -> e.value().equals(selectedScope))) {
+            selectedScope = null;
+        }
+
+        commandBuilder.set("#ScopeDropdown.Entries", scopeEntries);
+        commandBuilder.set("#ScopeDropdown.Value", selectedScope == null ? SCOPE_GLOBAL : selectedScope);
+        commandBuilder.set("#ScopeDropdown.TooltipText", Message.translation(BlockRegenMessages.UI_TOOLTIP_SCOPE_DROPDOWN));
+
+        eventBuilder.addEventBinding(
+            CustomUIEventBindingType.ValueChanged,
+            "#ScopeDropdown",
+            new EventData().append("@ScopeValue", "#ScopeDropdown.Value"),
+            false
+        );
+
+        commandBuilder.clear("#IndependentToggle");
+        if (selectedScope != null) {
+            boolean independent = plugin.isAreaIndependent(selectedScope);
+            commandBuilder.appendInline(
+                "#IndependentToggle",
+                floorButtonMarkup("Independent", independent, tooltipText(BlockRegenMessages.UI_TOOLTIP_INDEPENDENT_TOGGLE))
+            );
+            eventBuilder.addEventBinding(
+                CustomUIEventBindingType.Activating,
+                "#IndependentToggle #Independent",
+                EventData.of("IndependentToggleArea", selectedScope),
+                false
+            );
+        }
     }
 
     /**
@@ -148,20 +208,42 @@ public class BlockRegenListPage extends InteractiveCustomUIPage<BlockRegenListPa
         );
     }
 
+    /**
+     * Block ids to show as rows for the currently selected scope: the global rule set when Global
+     * is selected; otherwise the selected area's own rule block ids, plus (unless that area is
+     * marked Independent) every globally-configured block id too, so inherited rows show up.
+     */
+    @Nonnull
+    private Set<String> rowBlockIdsForCurrentScope() {
+        Set<String> ids = new TreeSet<>();
+        if (selectedScope == null) {
+            ids.addAll(plugin.getRules().keySet());
+            return ids;
+        }
+        ids.addAll(plugin.getAreaRuleBlockIds(selectedScope));
+        if (!plugin.isAreaIndependent(selectedScope)) {
+            ids.addAll(plugin.getRules().keySet());
+        }
+        return ids;
+    }
+
     private void buildList(@Nonnull UICommandBuilder commandBuilder, @Nonnull UIEventBuilder eventBuilder) {
         commandBuilder.clear("#BlockList");
 
-        Map<String, Integer> rules = new TreeMap<>(plugin.getRules());
-        if (rules.isEmpty()) {
+        Set<String> blockIds = rowBlockIdsForCurrentScope();
+        if (blockIds.isEmpty()) {
             commandBuilder.appendInline("#BlockList", "Label #EmptyLabel { Style: (Alignment: Center); }");
             commandBuilder.set("#BlockList #EmptyLabel.Text", Message.translation(BlockRegenMessages.UI_NO_BLOCK_CONFIGURED));
             return;
         }
 
         int index = 0;
-        for (Map.Entry<String, Integer> entry : rules.entrySet()) {
-            String blockId = entry.getKey();
-            int delaySeconds = entry.getValue();
+        for (String blockId : blockIds) {
+            BlockRegenPlugin.EffectiveRule rule = plugin.resolveEffectiveRule(selectedScope, blockId);
+            if (rule == null) {
+                continue; // defensive: shouldn't happen given how rowBlockIdsForCurrentScope() builds its set
+            }
+            int delaySeconds = rule.delaySeconds();
             String unit = displayUnitByBlockId.computeIfAbsent(blockId, id -> defaultUnitFor(delaySeconds));
             String selector = "#BlockList[" + index + "]";
             index++;
@@ -180,8 +262,8 @@ public class BlockRegenListPage extends InteractiveCustomUIPage<BlockRegenListPa
             commandBuilder.set(selector + " #Remove.Text", Message.translation(BlockRegenMessages.UI_REMOVE_BUTTON));
             commandBuilder.set(selector + " #Remove.TooltipText", Message.translation(BlockRegenMessages.UI_TOOLTIP_REMOVE_RULE));
 
-            boolean needFloor = plugin.isNeedFloorFor(blockId);
-            int radius = plugin.getRadiusFor(blockId);
+            boolean needFloor = rule.needFloor();
+            int radius = rule.radius();
             commandBuilder.set(selector + " #Radius.Value", radius);
             commandBuilder.set(selector + " #Radius.TooltipText", Message.translation(BlockRegenMessages.UI_TOOLTIP_ROW_RADIUS));
 
@@ -338,12 +420,26 @@ public class BlockRegenListPage extends InteractiveCustomUIPage<BlockRegenListPa
             applyDelay(blockId, data.getCurrentValue(), displayUnitByBlockId.get(blockId));
             displayUnitByBlockId.put(blockId, data.getUnit());
         } else if (data.getRemoveBlockId() != null) {
-            plugin.removeRule(data.getRemoveBlockId());
+            if (selectedScope == null) {
+                plugin.removeRule(data.getRemoveBlockId());
+            } else {
+                plugin.removeAreaRule(selectedScope, data.getRemoveBlockId());
+            }
             displayUnitByBlockId.remove(data.getRemoveBlockId());
         } else if (data.getFloorBlockId() != null && data.getFloor() != null) {
-            plugin.setNeedFloor(data.getFloorBlockId(), "true".equals(data.getFloor()));
+            boolean value = "true".equals(data.getFloor());
+            if (selectedScope == null) {
+                plugin.setNeedFloor(data.getFloorBlockId(), value);
+            } else {
+                plugin.setAreaNeedFloor(selectedScope, data.getFloorBlockId(), value);
+            }
         } else if (data.getRadiusBlockId() != null && data.getRadius() != null) {
-            plugin.setRadius(data.getRadiusBlockId(), Math.max(0, data.getRadius()));
+            int value = Math.max(0, data.getRadius());
+            if (selectedScope == null) {
+                plugin.setRadius(data.getRadiusBlockId(), value);
+            } else {
+                plugin.setAreaRadius(selectedScope, data.getRadiusBlockId(), value);
+            }
         } else if (data.getAddBlockId() != null) {
             addRule(data.getAddBlockId(), data.getAddDelay(), data.getAddRadius());
         } else if (data.getAddUnit() != null && data.getAddCurrentValue() != null) {
@@ -352,12 +448,18 @@ public class BlockRegenListPage extends InteractiveCustomUIPage<BlockRegenListPa
         } else if (data.getAddFloorToggle() != null) {
             addNeedFloor = "true".equals(data.getAddFloorToggle());
             listChanged = false;
+        } else if (data.getScopeValue() != null) {
+            selectedScope = SCOPE_GLOBAL.equals(data.getScopeValue()) ? null : data.getScopeValue();
+        } else if (data.getIndependentToggleArea() != null) {
+            String area = data.getIndependentToggleArea();
+            plugin.setAreaIndependent(area, !plugin.isAreaIndependent(area));
         } else {
             listChanged = false;
         }
 
         UICommandBuilder commandBuilder = new UICommandBuilder();
         UIEventBuilder eventBuilder = new UIEventBuilder();
+        buildScopeSelector(commandBuilder, eventBuilder);
         buildAddUnitToggle(commandBuilder, eventBuilder);
         buildAddFloorToggle(commandBuilder, eventBuilder);
         if (listChanged) {
@@ -366,12 +468,16 @@ public class BlockRegenListPage extends InteractiveCustomUIPage<BlockRegenListPa
         sendUpdate(commandBuilder, eventBuilder, false);
     }
 
-    /** Converts a value entered under the given (previously displayed) unit back to seconds and saves it. */
+    /** Converts a value entered under the given (previously displayed) unit back to seconds and saves it, in the current scope. */
     private void applyDelay(@Nonnull String blockId, int value, @Nullable String previousUnit) {
         int multiplier = unitMultiplier(previousUnit != null ? previousUnit : UNIT_SECONDS);
         int totalSeconds = value * multiplier;
         if (totalSeconds > 0) {
-            plugin.setRule(blockId, totalSeconds);
+            if (selectedScope == null) {
+                plugin.setRule(blockId, totalSeconds);
+            } else {
+                plugin.setAreaRule(selectedScope, blockId, totalSeconds);
+            }
         }
     }
 
@@ -394,10 +500,18 @@ public class BlockRegenListPage extends InteractiveCustomUIPage<BlockRegenListPa
             return;
         }
 
-        plugin.setRule(blockType.getId(), totalSeconds);
-        plugin.setNeedFloor(blockType.getId(), addNeedFloor);
-        plugin.setRadius(blockType.getId(), Math.max(0, radius != null ? radius : 0));
-        displayUnitByBlockId.put(blockType.getId(), addUnit);
+        String blockId = blockType.getId();
+        int radiusValue = Math.max(0, radius != null ? radius : 0);
+        if (selectedScope == null) {
+            plugin.setRule(blockId, totalSeconds);
+            plugin.setNeedFloor(blockId, addNeedFloor);
+            plugin.setRadius(blockId, radiusValue);
+        } else {
+            plugin.setAreaRule(selectedScope, blockId, totalSeconds);
+            plugin.setAreaNeedFloor(selectedScope, blockId, addNeedFloor);
+            plugin.setAreaRadius(selectedScope, blockId, radiusValue);
+        }
+        displayUnitByBlockId.put(blockId, addUnit);
         playerRef.sendMessage(Message.translation(BlockRegenMessages.RULE_SET)
             .param("block", blockType.getId())
             .param("duration", DurationParser.formatSeconds(totalSeconds)));
@@ -438,6 +552,10 @@ public class BlockRegenListPage extends InteractiveCustomUIPage<BlockRegenListPa
             .add()
             .append(new KeyedCodec<>("@AddRadius", Codec.INTEGER), (e, i) -> e.addRadius = i, e -> e.addRadius)
             .add()
+            .append(new KeyedCodec<>("@ScopeValue", Codec.STRING), (e, s) -> e.scopeValue = s, e -> e.scopeValue)
+            .add()
+            .append(new KeyedCodec<>("IndependentToggleArea", Codec.STRING), (e, s) -> e.independentToggleArea = s, e -> e.independentToggleArea)
+            .add()
             .build();
 
         private String delayBlockId;
@@ -456,6 +574,8 @@ public class BlockRegenListPage extends InteractiveCustomUIPage<BlockRegenListPa
         private Integer radius;
         private String addFloorToggle;
         private Integer addRadius;
+        private String scopeValue;
+        private String independentToggleArea;
 
         @Nullable
         public String getDelayBlockId() {
@@ -535,6 +655,16 @@ public class BlockRegenListPage extends InteractiveCustomUIPage<BlockRegenListPa
         @Nullable
         public Integer getAddRadius() {
             return addRadius;
+        }
+
+        @Nullable
+        public String getScopeValue() {
+            return scopeValue;
+        }
+
+        @Nullable
+        public String getIndependentToggleArea() {
+            return independentToggleArea;
         }
     }
 }

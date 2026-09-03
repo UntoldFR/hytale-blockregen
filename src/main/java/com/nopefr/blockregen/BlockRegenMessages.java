@@ -65,4 +65,7 @@ final class BlockRegenMessages {
     static final String UI_TOOLTIP_ROW_RADIUS = "blockregen.ui.tooltip.rowRadius";
     static final String UI_TOOLTIP_ADD_FLOOR = "blockregen.ui.tooltip.addFloor";
     static final String UI_TOOLTIP_ADD_RADIUS = "blockregen.ui.tooltip.addRadius";
+
+    static final String UI_TOOLTIP_SCOPE_DROPDOWN = "blockregen.ui.tooltip.scopeDropdown";
+    static final String UI_TOOLTIP_INDEPENDENT_TOGGLE = "blockregen.ui.tooltip.independentToggle";
 }

@@ -83,6 +83,25 @@ is only visible to players with the `<basePermission>.ghosts` permission
 empty spot, as usual. Grant this permission to your admin/OP group to use
 it.
 
+### CustomAreas integration (optional)
+
+If [CustomAreas](https://github.com/UntoldFR/hytale-customareas) is also
+installed on the server, BlockRegen automatically registers a
+`BLOCKREGEN` flag for it - nothing to configure, and nothing changes if
+CustomAreas isn't installed.
+
+Tag an area with it (`/carea <name> flag add BLOCKREGEN`) and it gets its
+own rule set in the `/blockregen list` window: a dropdown at the top lets
+you switch between "Global" and any `BLOCKREGEN`-flagged area. An area
+**inherits every global rule**, but can override the delay/floor/radius
+for specific blocks, or add rules for blocks that have no global rule at
+all. Toggling **Independent** next to the dropdown makes that area ignore
+global rules entirely and use only its own.
+
+Example: `Stone` regenerates after 120s everywhere by default; setting
+`Stone` to 5s while "Area1" is selected makes only that area's `Stone`
+blocks regenerate in 5s - everywhere else stays at 120s.
+
 ## Permissions
 
 - `com.nopefr.blockregen.command.blockregen` (and its subcommands, e.g.

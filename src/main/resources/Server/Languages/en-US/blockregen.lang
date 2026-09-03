@@ -92,6 +92,11 @@ ui.tooltip.rowRadius = Radius (in blocks) to scatter the respawn within around t
 ui.tooltip.addFloor = Toggle: require a solid block underneath before the picked block regenerates
 ui.tooltip.addRadius = Radius (in blocks) to scatter the respawn within around the break point (0 = exact spot)
 
+# Scope selector (CustomAreas integration): switches between editing the
+# global rules and a CustomAreas area flagged BLOCKREGEN.
+ui.tooltip.scopeDropdown = Choose Global, or a CustomAreas area flagged BLOCKREGEN, to edit its rules
+ui.tooltip.independentToggle = Toggle: when ON, this area ignores all global rules and only uses its own
+
 # Window title. This one is still set directly in the .ui file (see
 # src/main/resources/Common/UI/Custom/Pages/BlockRegen/BlockRegenListPage.ui,
 # the "@Text" line under #Title) rather than here, so edit it there if needed.
