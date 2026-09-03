@@ -44,6 +44,7 @@ public class BlockRegenCommand extends AbstractCommand {
 
         addSubCommand(new BlockRegenListCommand(plugin));
         addSubCommand(new BlockRegenAdminCommand(plugin));
+        addSubCommand(new BlockRegenHelpCommand());
         addUsageVariant(new BlockRegenTargetCommand(plugin));
 
         // Only players/console with the right permission can use this

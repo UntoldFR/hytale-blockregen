@@ -29,6 +29,7 @@ command.blockregen.arg.radius = Radius (in blocks) to scatter the respawn within
 command.list.description = Lists the blocks currently configured to regenerate, with their delay
 command.target.description = Configure regeneration for the block you are currently looking at
 command.admin.description = Toggle admin bypass: blocks you place will still be able to regenerate
+command.help.description = Lists all /blockregen commands
 
 # --- Chat messages ---
 message.unknownBlock = Unknown block: "{block}". Check the exact block identifier.
@@ -65,6 +66,13 @@ message.adminBypassOnTitle = Admin bypass: ON
 message.adminBypassOffTitle = Admin bypass: OFF
 message.adminBypassOn = Blocks you place from now on will still be able to regenerate.
 message.adminBypassOff = Blocks you place from now on will NOT regenerate (anti-abuse protection).
+
+# --- "/blockregen help" ---
+message.helpHeader = BlockRegen commands:
+message.helpLineMain = /blockregen "<block>" <duration> [--remove] [--floor] [radius] - create/edit/remove a global regeneration rule
+message.helpLineTarget = /blockregen <duration> - apply to the block you're looking at (player only, asks for chat confirmation)
+message.helpLineList = /blockregen list - open the rules UI (Global + CustomAreas areas, if installed)
+message.helpLineAdmin = /blockregen admin - toggle your personal anti-abuse placement bypass
 
 # --- "/blockregen list" UI window ---
 ui.noBlockConfigured = No block is currently configured to regenerate.

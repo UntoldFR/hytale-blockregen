@@ -21,6 +21,7 @@ final class BlockRegenMessages {
     static final String LIST_DESCRIPTION = "blockregen.command.list.description";
     static final String TARGET_DESCRIPTION = "blockregen.command.target.description";
     static final String ADMIN_DESCRIPTION = "blockregen.command.admin.description";
+    static final String HELP_DESCRIPTION = "blockregen.command.help.description";
 
     static final String UNKNOWN_BLOCK = "blockregen.message.unknownBlock";
     static final String UNKNOWN_BLOCK_SHORT = "blockregen.message.unknownBlockShort";
@@ -45,6 +46,12 @@ final class BlockRegenMessages {
     static final String ADMIN_BYPASS_OFF_TITLE = "blockregen.message.adminBypassOffTitle";
     static final String ADMIN_BYPASS_ON = "blockregen.message.adminBypassOn";
     static final String ADMIN_BYPASS_OFF = "blockregen.message.adminBypassOff";
+
+    static final String HELP_HEADER = "blockregen.message.helpHeader";
+    static final String HELP_LINE_MAIN = "blockregen.message.helpLineMain";
+    static final String HELP_LINE_TARGET = "blockregen.message.helpLineTarget";
+    static final String HELP_LINE_LIST = "blockregen.message.helpLineList";
+    static final String HELP_LINE_ADMIN = "blockregen.message.helpLineAdmin";
 
     static final String UI_NO_BLOCK_CONFIGURED = "blockregen.ui.noBlockConfigured";
     static final String UI_ADD_BUTTON = "blockregen.ui.addButton";
