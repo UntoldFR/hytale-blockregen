@@ -2,6 +2,34 @@
 
 All notable changes to the plugin are documented here.
 
+## [1.2.0]
+
+### Fixed
+- Placing a block where one was waiting to regenerate no longer
+  disconnects the player - the pending regeneration is now cancelled
+  through the correct game-safe path instead of corrupting the block
+  placement in progress.
+
+### Added
+- **Regenerations now survive a server/world restart.** Previously, any
+  block still waiting to regenerate was silently lost if the server
+  stopped before its timer finished (especially noticeable with long
+  delays, or on single-player worlds that restart often). Pending
+  regenerations are now saved to disk and resumed automatically:  a
+  timer that already ran out while the server was down fires promptly on
+  the next startup, and one still counting down (ghost preview included)
+  picks up where it left off.
+- **"Already configured" indicator** in the "add a new rule" block
+  picker: a block that already has a rule in the currently selected
+  scope is marked with a `[Set]` label prefix and a tooltip, so a long
+  block list stays easy to scan (not relying on color alone, for
+  colorblind accessibility).
+
+### Changed
+- The list of already-configured blocks in `/blockregen list` is now
+  sorted alphabetically by the name shown on screen, rather than by the
+  block's internal identifier.
+
 ## [1.1.2]
 
 ### Changed
