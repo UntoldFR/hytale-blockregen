@@ -2,6 +2,13 @@
 
 All notable changes to the plugin are documented here.
 
+## [1.2.1]
+
+### Added
+- Each admin's `/blockregen admin` bypass state is now saved to disk, so
+  it survives both a disconnect/reconnect and a server restart (it used
+  to reset on either).
+
 ## [1.2.0]
 
 ### Fixed

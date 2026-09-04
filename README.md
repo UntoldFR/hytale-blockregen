@@ -133,7 +133,9 @@ Rules set via `/blockregen` are saved to disk and reloaded automatically
 on server startup. Regenerations already in progress (block broken,
 timer running) are saved too and resume automatically on the next
 startup - a block whose timer fully elapsed while the server was down
-regenerates promptly once it comes back up. The one thing still lost on
+regenerates promptly once it comes back up. Each admin's `/blockregen
+admin` bypass state is saved as well, so it survives both a
+disconnect/reconnect and a server restart. The one thing still lost on
 restart is a pending Y/N chat confirmation (`/blockregen <duration>`).
 
 Known limitation: a world that hasn't finished loading yet by the time

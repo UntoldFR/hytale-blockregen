@@ -110,10 +110,12 @@ public class BlockRegenPlugin extends JavaPlugin {
     // BlockRegenPlaceListener et setPlayerPlaced/consumePlayerPlacedMark.
     private final Set<PositionKey> playerPlacedBlocks = ConcurrentHashMap.newKeySet();
 
-    // UUID des joueurs ayant actuellement active le mode "admin" (/blockregen
-    // admin) : les blocs qu'ils posent ne sont pas marques comme ci-dessus,
-    // et pourront donc regenerer normalement s'ils sont casses plus tard.
-    private final Set<UUID> adminBypassPlayers = ConcurrentHashMap.newKeySet();
+    // UUID (en String) des joueurs ayant actuellement active le mode "admin"
+    // (/blockregen admin) : les blocs qu'ils posent ne sont pas marques comme
+    // ci-dessus, et pourront donc regenerer normalement s'ils sont casses
+    // plus tard. Persiste sur disque (comme independentAreas) pour survivre
+    // a une deconnexion/reconnexion du joueur et a un redemarrage du serveur.
+    private Map<String, Boolean> adminBypassPlayers;
 
     private ComponentType<EntityStore, BlockRegenGhostMarker> ghostMarkerComponentType;
     private String ghostPermission;
@@ -133,6 +135,7 @@ public class BlockRegenPlugin extends JavaPlugin {
         areaRadiusRules = config.get().areaRadius;
         independentAreas = config.get().independentAreas;
         pendingRegenRecords = config.get().pendingRegens;
+        adminBypassPlayers = config.get().adminBypass;
 
         // Commande /blockregen "Nom du block" 120 (inclut la sous-commande
         // /blockregen admin, voir BlockRegenAdminCommand)
@@ -451,19 +454,23 @@ public class BlockRegenPlugin extends JavaPlugin {
 
     /**
      * Bascule le mode "admin bypass" de ce joueur (voir {@link #hasAdminBypass})
-     * et retourne le nouvel etat (true = active).
+     * et retourne le nouvel etat (true = active). Persiste sur disque.
      */
     public boolean toggleAdminBypass(@Nonnull UUID playerUuid) {
-        if (!adminBypassPlayers.remove(playerUuid)) {
-            adminBypassPlayers.add(playerUuid);
-            return true;
+        String key = playerUuid.toString();
+        boolean newState = !adminBypassPlayers.getOrDefault(key, false);
+        if (newState) {
+            adminBypassPlayers.put(key, true);
+        } else {
+            adminBypassPlayers.remove(key);
         }
-        return false;
+        persist();
+        return newState;
     }
 
     /** True si ce joueur a actuellement le bypass admin actif (ses placements ne sont pas marques anti-abus). */
     public boolean hasAdminBypass(@Nonnull UUID playerUuid) {
-        return adminBypassPlayers.contains(playerUuid);
+        return adminBypassPlayers.getOrDefault(playerUuid.toString(), false);
     }
 
     /**
@@ -688,6 +695,11 @@ public class BlockRegenPlugin extends JavaPlugin {
                 PendingRegenRecord.CODEC, ConcurrentHashMap::new, false), false),
                 (c, m) -> c.pendingRegens = m, c -> c.pendingRegens)
             .add()
+            // UUID (en String) des joueurs ayant le bypass admin actif, voir
+            // toggleAdminBypass/hasAdminBypass.
+            .append(new KeyedCodec<>("AdminBypassPlayers", new MapCodec<Boolean, Map<String, Boolean>>(Codec.BOOLEAN, ConcurrentHashMap::new, false), false),
+                (c, m) -> c.adminBypass = m, c -> c.adminBypass)
+            .add()
             .build();
 
         private Map<String, Integer> rules = new ConcurrentHashMap<>();
@@ -698,5 +710,6 @@ public class BlockRegenPlugin extends JavaPlugin {
         private Map<String, Map<String, Integer>> areaRadius = new ConcurrentHashMap<>();
         private Map<String, Boolean> independentAreas = new ConcurrentHashMap<>();
         private Map<String, PendingRegenRecord> pendingRegens = new ConcurrentHashMap<>();
+        private Map<String, Boolean> adminBypass = new ConcurrentHashMap<>();
     }
 }
