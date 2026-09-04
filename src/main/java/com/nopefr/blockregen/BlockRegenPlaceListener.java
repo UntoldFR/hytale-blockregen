@@ -51,7 +51,7 @@ public class BlockRegenPlaceListener extends EntityEventSystem<EntityStore, Plac
         int y = targetBlock.y();
         int z = targetBlock.z();
 
-        plugin.cancelPendingRegenAt(world, x, y, z);
+        plugin.cancelPendingRegenAt(world, x, y, z, commandBuffer);
 
         // L'entite qui a declenche l'evenement est celle qui a pose le bloc
         // (generalement un joueur ; peut etre absente/non-joueur pour une

@@ -38,7 +38,10 @@ within 3 blocks of the original break point (`--radius`).
 /blockregen list
 ```
 -> Shows the list of blocks currently configured to regenerate, with the
-delay (and floor/radius options) associated with each.
+delay (and floor/radius options) associated with each. In the "add a new
+rule" block picker, any block that already has a rule in the currently
+selected scope is marked with a `[Set]` label prefix and a tooltip, so a
+long block list stays easy to scan.
 
 ```
 /blockregen 90s
@@ -127,6 +130,14 @@ Without any permission granted, only the console can use `/blockregen`.
 ## Persistence
 
 Rules set via `/blockregen` are saved to disk and reloaded automatically
-on server startup. Only regenerations already in progress (block broken,
-timer running) and pending Y/N chat confirmations are lost if the server
-restarts before they complete.
+on server startup. Regenerations already in progress (block broken,
+timer running) are saved too and resume automatically on the next
+startup - a block whose timer fully elapsed while the server was down
+regenerates promptly once it comes back up. The one thing still lost on
+restart is a pending Y/N chat confirmation (`/blockregen <duration>`).
+
+Known limitation: a world that hasn't finished loading yet by the time
+the plugin starts has its pending regenerations skipped rather than
+retried later - not an issue for the default/only world on a typical
+single-world server, but worth knowing if you run multiple worlds that
+load lazily.

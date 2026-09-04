@@ -99,6 +99,7 @@ ui.tooltip.rowFloor = Toggle: require a solid block underneath before this block
 ui.tooltip.rowRadius = Radius (in blocks) to scatter the respawn within around the break point (0 = exact spot)
 ui.tooltip.addFloor = Toggle: require a solid block underneath before the picked block regenerates
 ui.tooltip.addRadius = Radius (in blocks) to scatter the respawn within around the break point (0 = exact spot)
+ui.tooltip.addBlockAlreadySet = This block already has a rule in the current scope - picking it edits that rule
 
 # Scope selector (CustomAreas integration): switches between editing the
 # global rules and a CustomAreas area flagged BLOCKREGEN.

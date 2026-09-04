@@ -4,6 +4,7 @@ import com.hypixel.hytale.codec.Codec;
 import com.hypixel.hytale.codec.KeyedCodec;
 import com.hypixel.hytale.codec.builder.BuilderCodec;
 import com.hypixel.hytale.codec.codecs.map.MapCodec;
+import com.hypixel.hytale.component.CommandBuffer;
 import com.hypixel.hytale.component.ComponentType;
 import com.hypixel.hytale.component.Ref;
 import com.hypixel.hytale.component.RemoveReason;
@@ -17,12 +18,14 @@ import com.hypixel.hytale.server.core.permissions.PermissionsModule;
 import com.hypixel.hytale.server.core.plugin.JavaPlugin;
 import com.hypixel.hytale.server.core.plugin.JavaPluginInit;
 import com.hypixel.hytale.server.core.universe.PlayerRef;
+import com.hypixel.hytale.server.core.universe.Universe;
 import com.hypixel.hytale.server.core.universe.world.World;
 import com.hypixel.hytale.server.core.universe.world.storage.EntityStore;
 import com.hypixel.hytale.server.core.util.Config;
 
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -79,6 +82,16 @@ public class BlockRegenPlugin extends JavaPlugin {
     // Pont reflectif (optionnel) vers le plugin CustomAreas, voir CustomAreasBridge.
     private final CustomAreasBridge customAreasBridge = new CustomAreasBridge(this);
 
+    // Positions (cle "<monde>@<x>,<y>,<z>") -> regeneration en attente,
+    // persistees sur disque pour survivre a un redemarrage du serveur/monde
+    // (voir persistPendingRegenRecord/removePendingRegenRecord et start()).
+    private Map<String, PendingRegenRecord> pendingRegenRecords;
+
+    // Garde une reference vers le systeme d'ecoute de casse de bloc pour
+    // pouvoir lui demander de replanifier les regenerations persistees au
+    // demarrage (voir start()).
+    private BlockRegenListener blockRegenListener;
+
     // UUID du joueur -> demande de regle en attente de confirmation Y/N dans le chat
     private final Map<UUID, PendingRegen> pendingConfirmations = new ConcurrentHashMap<>();
 
@@ -119,6 +132,7 @@ public class BlockRegenPlugin extends JavaPlugin {
         areaNeedFloorRules = config.get().areaNeedFloor;
         areaRadiusRules = config.get().areaRadius;
         independentAreas = config.get().independentAreas;
+        pendingRegenRecords = config.get().pendingRegens;
 
         // Commande /blockregen "Nom du block" 120 (inclut la sous-commande
         // /blockregen admin, voir BlockRegenAdminCommand)
@@ -137,7 +151,8 @@ public class BlockRegenPlugin extends JavaPlugin {
         ));
 
         // Ecoute des evenements de casse de bloc (systeme ECS)
-        getEntityStoreRegistry().registerSystem(new BlockRegenListener(this));
+        blockRegenListener = new BlockRegenListener(this);
+        getEntityStoreRegistry().registerSystem(blockRegenListener);
 
         // Ecoute des evenements de pose de bloc : annule la regeneration en
         // attente si un joueur pose un bloc a l'endroit d'un bloc casse.
@@ -162,10 +177,18 @@ public class BlockRegenPlugin extends JavaPlugin {
 
     @Override
     protected void start() {
-        // Rien a faire au demarrage : les taches de regeneration sont
-        // creees a la volee dans BlockRegenListener et enregistrees
-        // dans le TaskRegistry pour etre annulees automatiquement
-        // si le plugin est desactive.
+        // Replanifie les regenerations qui etaient en attente avant le
+        // dernier arret du serveur/monde (voir persistPendingRegenRecord).
+        // Un monde introuvable (pas encore charge a ce stade) est ignore :
+        // cas rare pour le monde par defaut, limite connue et documentee.
+        for (PendingRegenRecord record : new ArrayList<>(pendingRegenRecords.values())) {
+            World world = Universe.get().getWorld(record.world());
+            if (world == null) {
+                getLogger().at(Level.FINE).log("Skipping restore of pending regen in unknown/unloaded world '%s'.", record.world());
+                continue;
+            }
+            blockRegenListener.rescheduleFromPersistedRecord(world, record);
+        }
     }
 
     @Override
@@ -349,20 +372,73 @@ public class BlockRegenPlugin extends JavaPlugin {
     }
 
     /**
+     * Enregistre sur disque la regeneration en attente a cette position, pour
+     * qu'elle survive a un arret du serveur/monde (voir {@link #start()} qui
+     * les recharge et les replanifie). Ecrit immediatement (pas seulement a
+     * l'arret propre) pour supporter aussi un crash/coupure brutale.
+     */
+    public void persistPendingRegenRecord(
+        @Nonnull World world, int x, int y, int z, @Nonnull String blockId, long respawnAtMillis, boolean needFloor, int radius
+    ) {
+        pendingRegenRecords.put(pendingRegenKey(world, x, y, z), new PendingRegenRecord(world.getName(), x, y, z, blockId, respawnAtMillis, needFloor, radius));
+        persist();
+    }
+
+    /** Retire l'enregistrement persiste de regeneration en attente a cette position, s'il existe. */
+    public void removePendingRegenRecord(@Nonnull World world, int x, int y, int z) {
+        if (pendingRegenRecords.remove(pendingRegenKey(world, x, y, z)) != null) {
+            persist();
+        }
+    }
+
+    @Nonnull
+    private static String pendingRegenKey(@Nonnull World world, int x, int y, int z) {
+        return world.getName() + "@" + x + "," + y + "," + z;
+    }
+
+    /**
      * Annule la regeneration en attente a cette position, si il y en a une :
      * arrete la tache planifiee et retire son marqueur fantome. Appele quand
      * un joueur pose un bloc a cet endroit avant la fin du delai.
+     *
+     * Prend un CommandBuffer (et non le Store directement) car ceci est
+     * appele depuis BlockRegenPlaceListener, en plein traitement de
+     * PlaceBlockEvent : muter le Store directement a ce moment-la (comme le
+     * faisait une version precedente) corrompt le traitement de l'evenement
+     * en cours et provoquait la deconnexion du joueur qui vient de poser le
+     * bloc. Meme regle deja documentee sur spawnGhost() dans BlockRegenListener.
      */
-    public void cancelPendingRegenAt(@Nonnull World world, int x, int y, int z) {
+    public void cancelPendingRegenAt(@Nonnull World world, int x, int y, int z, @Nonnull CommandBuffer<EntityStore> commandBuffer) {
         ActiveRegen active = activeRegens.remove(new PositionKey(world, x, y, z));
         if (active == null) {
             return;
         }
         active.future().cancel(false);
-        removeGhostEntity(world, active.ghostRef());
+        removeGhostEntity(commandBuffer, active.ghostRef());
+        removePendingRegenRecord(world, x, y, z);
     }
 
-    /** Retire un marqueur fantome du monde (et arrete de le rafraichir), s'il existe encore. */
+    /**
+     * Retire un marqueur fantome via un CommandBuffer, s'il existe encore.
+     * A utiliser depuis un gestionnaire d'evenement ECS (voir cancelPendingRegenAt).
+     */
+    public void removeGhostEntity(@Nonnull CommandBuffer<EntityStore> commandBuffer, @Nullable Ref<EntityStore> ghostRef) {
+        if (ghostRef == null) {
+            return;
+        }
+        untrackPendingGhost(ghostRef);
+        if (ghostRef.isValid()) {
+            commandBuffer.removeEntity(ghostRef, RemoveReason.REMOVE);
+        }
+    }
+
+    /**
+     * Retire un marqueur fantome du monde directement via le Store, s'il
+     * existe encore. Uniquement sur au thread du monde EN DEHORS d'un
+     * gestionnaire d'evenement ECS (ex: depuis world.execute() a la fin
+     * d'une regeneration planifiee) - voir removeGhostEntity(CommandBuffer, Ref)
+     * pour l'equivalent utilisable depuis un gestionnaire d'evenement.
+     */
     public void removeGhostEntity(@Nonnull World world, @Nullable Ref<EntityStore> ghostRef) {
         if (ghostRef == null) {
             return;
@@ -497,6 +573,82 @@ public class BlockRegenPlugin extends JavaPlugin {
     private record ActiveRegen(Future<?> future, @Nullable Ref<EntityStore> ghostRef) {
     }
 
+    /**
+     * Version persistee sur disque d'une regeneration en attente : suffisant
+     * pour la replanifier telle quelle au demarrage (voir
+     * BlockRegenListener#rescheduleFromPersistedRecord), sans avoir besoin de
+     * re-resoudre une eventuelle regle CustomAreas (deja resolue au moment
+     * ou la regeneration a ete planifiee la premiere fois).
+     */
+    public static class PendingRegenRecord {
+        @Nonnull
+        public static final BuilderCodec<PendingRegenRecord> CODEC = BuilderCodec.builder(PendingRegenRecord.class, PendingRegenRecord::new)
+            .append(new KeyedCodec<>("World", Codec.STRING), (r, s) -> r.world = s, r -> r.world).add()
+            .append(new KeyedCodec<>("X", Codec.INTEGER), (r, i) -> r.x = i, r -> r.x).add()
+            .append(new KeyedCodec<>("Y", Codec.INTEGER), (r, i) -> r.y = i, r -> r.y).add()
+            .append(new KeyedCodec<>("Z", Codec.INTEGER), (r, i) -> r.z = i, r -> r.z).add()
+            .append(new KeyedCodec<>("BlockId", Codec.STRING), (r, s) -> r.blockId = s, r -> r.blockId).add()
+            .append(new KeyedCodec<>("RespawnAtMillis", Codec.LONG), (r, l) -> r.respawnAtMillis = l, r -> r.respawnAtMillis).add()
+            .append(new KeyedCodec<>("NeedFloor", Codec.BOOLEAN), (r, b) -> r.needFloor = b, r -> r.needFloor).add()
+            .append(new KeyedCodec<>("Radius", Codec.INTEGER), (r, i) -> r.radius = i, r -> r.radius).add()
+            .build();
+
+        private String world;
+        private int x;
+        private int y;
+        private int z;
+        private String blockId;
+        private long respawnAtMillis;
+        private boolean needFloor;
+        private int radius;
+
+        public PendingRegenRecord() {
+        }
+
+        public PendingRegenRecord(String world, int x, int y, int z, String blockId, long respawnAtMillis, boolean needFloor, int radius) {
+            this.world = world;
+            this.x = x;
+            this.y = y;
+            this.z = z;
+            this.blockId = blockId;
+            this.respawnAtMillis = respawnAtMillis;
+            this.needFloor = needFloor;
+            this.radius = radius;
+        }
+
+        public String world() {
+            return world;
+        }
+
+        public int x() {
+            return x;
+        }
+
+        public int y() {
+            return y;
+        }
+
+        public int z() {
+            return z;
+        }
+
+        public String blockId() {
+            return blockId;
+        }
+
+        public long respawnAtMillis() {
+            return respawnAtMillis;
+        }
+
+        public boolean needFloor() {
+            return needFloor;
+        }
+
+        public int radius() {
+            return radius;
+        }
+    }
+
     /** Configuration persistee sur disque (JSON) contenant les regles de regeneration. */
     public static class BlockRegenConfig {
         @Nonnull
@@ -529,6 +681,13 @@ public class BlockRegenPlugin extends JavaPlugin {
             .append(new KeyedCodec<>("IndependentAreas", new MapCodec<Boolean, Map<String, Boolean>>(Codec.BOOLEAN, ConcurrentHashMap::new, false), false),
                 (c, m) -> c.independentAreas = m, c -> c.independentAreas)
             .add()
+            // Regenerations en attente au moment de la sauvegarde (voir
+            // PendingRegenRecord) : permet de les reprendre au demarrage
+            // suivant au lieu de les perdre silencieusement.
+            .append(new KeyedCodec<>("PendingRegens", new MapCodec<PendingRegenRecord, Map<String, PendingRegenRecord>>(
+                PendingRegenRecord.CODEC, ConcurrentHashMap::new, false), false),
+                (c, m) -> c.pendingRegens = m, c -> c.pendingRegens)
+            .add()
             .build();
 
         private Map<String, Integer> rules = new ConcurrentHashMap<>();
@@ -538,5 +697,6 @@ public class BlockRegenPlugin extends JavaPlugin {
         private Map<String, Map<String, Boolean>> areaNeedFloor = new ConcurrentHashMap<>();
         private Map<String, Map<String, Integer>> areaRadius = new ConcurrentHashMap<>();
         private Map<String, Boolean> independentAreas = new ConcurrentHashMap<>();
+        private Map<String, PendingRegenRecord> pendingRegens = new ConcurrentHashMap<>();
     }
 }
