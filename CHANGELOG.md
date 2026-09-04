@@ -2,6 +2,15 @@
 
 All notable changes to the plugin are documented here.
 
+## [1.2.2]
+
+### Fixed
+- Fixed a crash on startup/reconnect that could silently break block
+  regeneration and the ghost preview entirely whenever there was at
+  least one pending regeneration to restore (introduced in 1.2.0). The
+  server's `Universe` isn't always ready by the time plugins start, and
+  restoring pending regenerations now waits for it instead of crashing.
+
 ## [1.2.1]
 
 ### Added

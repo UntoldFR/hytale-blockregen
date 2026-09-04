@@ -178,19 +178,47 @@ public class BlockRegenPlugin extends JavaPlugin {
         getLogger().at(Level.INFO).log("BlockRegen enabled (%d rule(s) loaded).", regenRules.size());
     }
 
+    private static final int UNIVERSE_READY_MAX_RETRIES = 60;
+
     @Override
     protected void start() {
         // Replanifie les regenerations qui etaient en attente avant le
         // dernier arret du serveur/monde (voir persistPendingRegenRecord).
-        // Un monde introuvable (pas encore charge a ce stade) est ignore :
-        // cas rare pour le monde par defaut, limite connue et documentee.
-        for (PendingRegenRecord record : new ArrayList<>(pendingRegenRecords.values())) {
-            World world = Universe.get().getWorld(record.world());
-            if (world == null) {
-                getLogger().at(Level.FINE).log("Skipping restore of pending regen in unknown/unloaded world '%s'.", record.world());
-                continue;
+        // Universe.get() peut retourner null ici : les plugins sont "Enabled"
+        // (donc start() appele) AVANT que "Getting Hytale Universe ready..."
+        // ne se termine, donc l'Univers n'est pas forcement pret tout de
+        // suite. On reessaie a interval regulier plutot que de planter.
+        restorePendingRegens(0);
+    }
+
+    private void restorePendingRegens(int attempt) {
+        Universe universe = Universe.get();
+        if (universe == null) {
+            if (attempt >= UNIVERSE_READY_MAX_RETRIES) {
+                getLogger().at(Level.WARNING).log("Universe never became ready - giving up restoring pending regenerations.");
+                return;
             }
-            blockRegenListener.rescheduleFromPersistedRecord(world, record);
+            @SuppressWarnings("unchecked")
+            ScheduledFuture<Void> retryTask = (ScheduledFuture<Void>) HytaleServer.SCHEDULED_EXECUTOR
+                .schedule(() -> restorePendingRegens(attempt + 1), 1, TimeUnit.SECONDS);
+            getTaskRegistry().registerTask(retryTask);
+            return;
+        }
+
+        // Un monde introuvable (supprime/renomme depuis) est ignore ; une
+        // erreur sur un enregistrement precis ne doit jamais empecher de
+        // traiter les autres ni de terminer le demarrage du plugin.
+        for (PendingRegenRecord record : new ArrayList<>(pendingRegenRecords.values())) {
+            try {
+                World world = universe.getWorld(record.world());
+                if (world == null) {
+                    getLogger().at(Level.FINE).log("Skipping restore of pending regen in unknown/unloaded world '%s'.", record.world());
+                    continue;
+                }
+                blockRegenListener.rescheduleFromPersistedRecord(world, record);
+            } catch (Exception e) {
+                getLogger().at(Level.WARNING).log("Failed to restore a pending regeneration in world '%s': %s", record.world(), e.getMessage());
+            }
         }
     }
 
