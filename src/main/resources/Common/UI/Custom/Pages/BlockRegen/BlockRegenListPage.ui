@@ -4,7 +4,7 @@ $C.@PageOverlay {
   LayoutMode: Middle;
 
   $C.@DecoratedContainer {
-    Anchor: (Width: 860, Height: 660);
+    Anchor: (Width: 940, Height: 660);
 
     #Title {
       $C.@Title {
@@ -74,6 +74,12 @@ $C.@PageOverlay {
         // Single ON/OFF "need floor" toggle button, injected dynamically by
         // BlockRegenListPage (same mechanism as #AddUnitToggle above).
         Group #AddFloorToggle {
+          LayoutMode: Left;
+          Anchor: (Right: 8);
+        }
+
+        // Single ON/OFF "regrowth" toggle button, same mechanism as above.
+        Group #AddRegrowthToggle {
           LayoutMode: Left;
           Anchor: (Right: 8);
         }

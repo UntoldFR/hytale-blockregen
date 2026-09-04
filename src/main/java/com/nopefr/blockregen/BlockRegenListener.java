@@ -119,7 +119,7 @@ public class BlockRegenListener extends EntityEventSystem<EntityStore, BreakBloc
             plugin.trackPendingGhost(world, ghosts.nameplateRef(), brokenType.getId(), respawnAtMillis);
         }
 
-        scheduleRegen(world, x, y, z, brokenType, delaySeconds, respawnAtMillis, rule.needFloor(), rule.radius(), ghosts);
+        scheduleRegen(world, x, y, z, brokenType, delaySeconds, respawnAtMillis, rule.needFloor(), rule.radius(), rule.regrowth(), ghosts);
     }
 
     /**
@@ -162,7 +162,7 @@ public class BlockRegenListener extends EntityEventSystem<EntityStore, BreakBloc
                 plugin.trackPendingGhost(world, ghosts.nameplateRef(), record.blockId(), record.respawnAtMillis());
             }
 
-            scheduleRegen(world, record.x(), record.y(), record.z(), blockType, delaySeconds, record.respawnAtMillis(), record.needFloor(), record.radius(), ghosts);
+            scheduleRegen(world, record.x(), record.y(), record.z(), blockType, delaySeconds, record.respawnAtMillis(), record.needFloor(), record.radius(), record.regrowth(), ghosts);
         });
     }
 
@@ -273,7 +273,8 @@ public class BlockRegenListener extends EntityEventSystem<EntityStore, BreakBloc
     }
 
     private void scheduleRegen(
-        World world, int x, int y, int z, BlockType blockType, int delaySeconds, long respawnAtMillis, boolean needFloor, int radius, @Nullable GhostEntities ghosts
+        World world, int x, int y, int z, BlockType blockType, int delaySeconds, long respawnAtMillis, boolean needFloor, int radius, boolean regrowth,
+        @Nullable GhostEntities ghosts
     ) {
         @SuppressWarnings("unchecked")
         ScheduledFuture<Void> future = (ScheduledFuture<Void>) HytaleServer.SCHEDULED_EXECUTOR.schedule(
@@ -289,7 +290,16 @@ public class BlockRegenListener extends EntityEventSystem<EntityStore, BreakBloc
                         if (target != null) {
                             WorldChunk chunk = world.getChunk(ChunkUtil.indexChunkFromBlock(target.x(), target.z()));
                             if (chunk != null) {
-                                chunk.setBlock(target.x(), target.y(), target.z(), blockType);
+                                BlockType toPlace = blockType;
+                                if (regrowth) {
+                                    BlockType sapling = resolveSapling(blockType.getId());
+                                    if (sapling != null && hasGrowableFloor(chunk, target.x(), target.y(), target.z())) {
+                                        toPlace = sapling;
+                                    }
+                                    // Pas d'espece de jeune pousse correspondante, ou pas de sol
+                                    // cultivable : on retombe simplement sur le rondin normal.
+                                }
+                                chunk.setBlock(target.x(), target.y(), target.z(), toPlace);
                             }
                         }
                         // target == null : aucune position valide trouvee
@@ -312,11 +322,50 @@ public class BlockRegenListener extends EntityEventSystem<EntityStore, BreakBloc
         plugin.trackActiveRegen(world, x, y, z, future, ghosts);
         // Persiste sur disque pour survivre a un arret du serveur/monde avant
         // que le delai soit ecoule (voir BlockRegenPlugin#start()).
-        plugin.persistPendingRegenRecord(world, x, y, z, blockType.getId(), respawnAtMillis, needFloor, radius);
+        plugin.persistPendingRegenRecord(world, x, y, z, blockType.getId(), respawnAtMillis, needFloor, radius, regrowth);
 
         // Enregistre la tache pour qu'elle soit annulee automatiquement
         // si le plugin est desactive avant la fin du delai.
         plugin.getTaskRegistry().registerTask(future);
+    }
+
+    // Blocs de troncs suivent le schema "Wood_<Espece>_Trunc..." et les jeunes
+    // pousses correspondantes "Plant_Sapling_<Espece>" - la chaine d'espece
+    // est identique entre les deux, donc pas besoin de table de correspondance
+    // manuelle : simple transformation de texte, verifiee contre le vrai
+    // registre de blocs du jeu (BlockType.fromString). Retourne null si le
+    // bloc casse n'est pas un tronc reconnu ou si son espece n'a pas de jeune
+    // pousse correspondante (ex: "Wood_Fir_Trunk" n'en a pas) - dans ce cas
+    // la regeneration retombe simplement sur le rondin normal.
+    private static final String LOG_PREFIX = "Wood_";
+    private static final String LOG_MARKER = "_Trunk";
+    private static final String SAPLING_PREFIX = "Plant_Sapling_";
+
+    @Nullable
+    private static BlockType resolveSapling(@Nonnull String logBlockId) {
+        if (!logBlockId.startsWith(LOG_PREFIX)) {
+            return null;
+        }
+        int markerIndex = logBlockId.indexOf(LOG_MARKER, LOG_PREFIX.length());
+        if (markerIndex < 0) {
+            return null;
+        }
+        String species = logBlockId.substring(LOG_PREFIX.length(), markerIndex);
+        return BlockType.fromString(SAPLING_PREFIX + species);
+    }
+
+    // Tous les variants de sol "herbe" du jeu partagent ce prefixe (ex:
+    // Soil_Grass, Soil_Grass_Dry, Soil_Grass_Wet_Full...) - un sol simplement
+    // "Soil_Dirt" (sans herbe) ne compte pas comme cultivable pour l'instant.
+    private static final String GROWABLE_FLOOR_PREFIX = "Soil_Grass";
+
+    /** True si le bloc juste en dessous de (x,y,z) est un sol "cultivable" (herbe) pour y planter une jeune pousse. */
+    private static boolean hasGrowableFloor(@Nonnull WorldChunk chunk, int x, int y, int z) {
+        if (y <= 0) {
+            return false;
+        }
+        BlockType below = chunk.getBlockType(x, y - 1, z);
+        return below != null && below.getId() != null && below.getId().startsWith(GROWABLE_FLOOR_PREFIX);
     }
 
     /**

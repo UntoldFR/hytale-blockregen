@@ -1,7 +1,7 @@
 {
     "Group": "com.nopefr",
     "Name": "BlockRegen",
-    "Version": "1.3.0",
+    "Version": "1.4.0",
     "Description": "Automatically regenerates a block type after a configurable delay.",
     "Authors": [
         {

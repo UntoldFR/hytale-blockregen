@@ -50,6 +50,13 @@ Group {
     Anchor: (Right: 8);
   }
 
+  // Single ON/OFF "regrowth" toggle button (plant a sapling instead of the
+  // log on regen), injected dynamically the same way as #FloorToggle above.
+  Group #RegrowthToggle {
+    LayoutMode: Left;
+    Anchor: (Right: 8);
+  }
+
   $C.@CancelTextButton #Remove {
     @Text = "X";
     Anchor: (Width: 30, Height: 26, Top: 6);

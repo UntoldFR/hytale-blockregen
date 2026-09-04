@@ -63,6 +63,9 @@ public class BlockRegenListPage extends InteractiveCustomUIPage<BlockRegenListPa
     // "Need floor" state currently selected in the "add a new rule" panel (not persisted).
     private boolean addNeedFloor = false;
 
+    // "Regrowth" state currently selected in the "add a new rule" panel (not persisted).
+    private boolean addRegrowth = false;
+
     // Currently selected scope: null = Global, otherwise a CustomAreas area name. Drives which
     // rules buildList()/addRule() read and write. Not persisted - resets to Global each time the
     // window is (re)opened.
@@ -148,6 +151,7 @@ public class BlockRegenListPage extends InteractiveCustomUIPage<BlockRegenListPa
 
         buildAddUnitToggle(commandBuilder, eventBuilder);
         buildAddFloorToggle(commandBuilder, eventBuilder);
+        buildAddRegrowthToggle(commandBuilder, eventBuilder);
 
         eventBuilder.addEventBinding(
             CustomUIEventBindingType.Activating,
@@ -194,6 +198,22 @@ public class BlockRegenListPage extends InteractiveCustomUIPage<BlockRegenListPa
             CustomUIEventBindingType.Activating,
             "#AddFloorToggle #AddFloor",
             EventData.of("AddFloorToggle", addNeedFloor ? "false" : "true"),
+            false
+        );
+    }
+
+    /** Rebuilds the single ON/OFF "regrowth" toggle button of the "add a new rule" panel. */
+    private void buildAddRegrowthToggle(@Nonnull UICommandBuilder commandBuilder, @Nonnull UIEventBuilder eventBuilder) {
+        commandBuilder.clear("#AddRegrowthToggle");
+        commandBuilder.appendInline(
+            "#AddRegrowthToggle",
+            toggleButtonMarkup("AddRegrowth", addRegrowth, "Regrow", tooltipText(BlockRegenMessages.UI_TOOLTIP_ADD_REGROWTH))
+        );
+
+        eventBuilder.addEventBinding(
+            CustomUIEventBindingType.Activating,
+            "#AddRegrowthToggle #AddRegrowth",
+            EventData.of("AddRegrowthToggle", addRegrowth ? "false" : "true"),
             false
         );
     }
@@ -302,6 +322,16 @@ public class BlockRegenListPage extends InteractiveCustomUIPage<BlockRegenListPa
                 CustomUIEventBindingType.FocusLost,
                 selector + " #Radius",
                 new EventData().append("RadiusBlockId", blockId).append("@Radius", selector + " #Radius.Value")
+            );
+
+            boolean regrowth = rule.regrowth();
+            String regrowthToggleSelector = selector + " #RegrowthToggle";
+            commandBuilder.appendInline(regrowthToggleSelector, toggleButtonMarkup("Regrowth", regrowth, "Regrow", tooltipText(BlockRegenMessages.UI_TOOLTIP_ROW_REGROWTH)));
+            eventBuilder.addEventBinding(
+                CustomUIEventBindingType.Activating,
+                regrowthToggleSelector + " #Regrowth",
+                new EventData().append("RegrowthBlockId", blockId).append("Regrowth", regrowth ? "false" : "true"),
+                false
             );
 
             String toggleSelector = selector + " #UnitToggle";
@@ -480,6 +510,13 @@ public class BlockRegenListPage extends InteractiveCustomUIPage<BlockRegenListPa
             } else {
                 plugin.setAreaRadius(selectedScope, data.getRadiusBlockId(), value);
             }
+        } else if (data.getRegrowthBlockId() != null && data.getRegrowth() != null) {
+            boolean value = "true".equals(data.getRegrowth());
+            if (selectedScope == null) {
+                plugin.setRegrowth(data.getRegrowthBlockId(), value);
+            } else {
+                plugin.setAreaRegrowth(selectedScope, data.getRegrowthBlockId(), value);
+            }
         } else if (data.getAddBlockId() != null) {
             addRule(data.getAddBlockId(), data.getAddDelay(), data.getAddRadius());
         } else if (data.getAddUnit() != null && data.getAddCurrentValue() != null) {
@@ -487,6 +524,9 @@ public class BlockRegenListPage extends InteractiveCustomUIPage<BlockRegenListPa
             listChanged = false;
         } else if (data.getAddFloorToggle() != null) {
             addNeedFloor = "true".equals(data.getAddFloorToggle());
+            listChanged = false;
+        } else if (data.getAddRegrowthToggle() != null) {
+            addRegrowth = "true".equals(data.getAddRegrowthToggle());
             listChanged = false;
         } else if (data.getScopeValue() != null) {
             selectedScope = SCOPE_GLOBAL.equals(data.getScopeValue()) ? null : data.getScopeValue();
@@ -503,6 +543,7 @@ public class BlockRegenListPage extends InteractiveCustomUIPage<BlockRegenListPa
         refreshAddBlockEntries(commandBuilder);
         buildAddUnitToggle(commandBuilder, eventBuilder);
         buildAddFloorToggle(commandBuilder, eventBuilder);
+        buildAddRegrowthToggle(commandBuilder, eventBuilder);
         if (listChanged) {
             buildList(commandBuilder, eventBuilder);
         }
@@ -547,10 +588,12 @@ public class BlockRegenListPage extends InteractiveCustomUIPage<BlockRegenListPa
             plugin.setRule(blockId, totalSeconds);
             plugin.setNeedFloor(blockId, addNeedFloor);
             plugin.setRadius(blockId, radiusValue);
+            plugin.setRegrowth(blockId, addRegrowth);
         } else {
             plugin.setAreaRule(selectedScope, blockId, totalSeconds);
             plugin.setAreaNeedFloor(selectedScope, blockId, addNeedFloor);
             plugin.setAreaRadius(selectedScope, blockId, radiusValue);
+            plugin.setAreaRegrowth(selectedScope, blockId, addRegrowth);
         }
         displayUnitByBlockId.put(blockId, addUnit);
         playerRef.sendMessage(Message.translation(BlockRegenMessages.RULE_SET)
@@ -593,6 +636,12 @@ public class BlockRegenListPage extends InteractiveCustomUIPage<BlockRegenListPa
             .add()
             .append(new KeyedCodec<>("@AddRadius", Codec.INTEGER), (e, i) -> e.addRadius = i, e -> e.addRadius)
             .add()
+            .append(new KeyedCodec<>("RegrowthBlockId", Codec.STRING), (e, s) -> e.regrowthBlockId = s, e -> e.regrowthBlockId)
+            .add()
+            .append(new KeyedCodec<>("Regrowth", Codec.STRING), (e, s) -> e.regrowth = s, e -> e.regrowth)
+            .add()
+            .append(new KeyedCodec<>("AddRegrowthToggle", Codec.STRING), (e, s) -> e.addRegrowthToggle = s, e -> e.addRegrowthToggle)
+            .add()
             .append(new KeyedCodec<>("@ScopeValue", Codec.STRING), (e, s) -> e.scopeValue = s, e -> e.scopeValue)
             .add()
             .append(new KeyedCodec<>("IndependentToggleArea", Codec.STRING), (e, s) -> e.independentToggleArea = s, e -> e.independentToggleArea)
@@ -615,6 +664,9 @@ public class BlockRegenListPage extends InteractiveCustomUIPage<BlockRegenListPa
         private Integer radius;
         private String addFloorToggle;
         private Integer addRadius;
+        private String regrowthBlockId;
+        private String regrowth;
+        private String addRegrowthToggle;
         private String scopeValue;
         private String independentToggleArea;
 
@@ -696,6 +748,21 @@ public class BlockRegenListPage extends InteractiveCustomUIPage<BlockRegenListPa
         @Nullable
         public Integer getAddRadius() {
             return addRadius;
+        }
+
+        @Nullable
+        public String getRegrowthBlockId() {
+            return regrowthBlockId;
+        }
+
+        @Nullable
+        public String getRegrowth() {
+            return regrowth;
+        }
+
+        @Nullable
+        public String getAddRegrowthToggle() {
+            return addRegrowthToggle;
         }
 
         @Nullable

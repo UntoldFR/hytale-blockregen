@@ -18,6 +18,7 @@ final class BlockRegenMessages {
     static final String FLAG_REMOVE = "blockregen.command.blockregen.flag.remove";
     static final String FLAG_FLOOR = "blockregen.command.blockregen.flag.floor";
     static final String ARG_RADIUS = "blockregen.command.blockregen.arg.radius";
+    static final String FLAG_REGROWTH = "blockregen.command.blockregen.flag.regrowth";
     static final String LIST_DESCRIPTION = "blockregen.command.list.description";
     static final String TARGET_DESCRIPTION = "blockregen.command.target.description";
     static final String ADMIN_DESCRIPTION = "blockregen.command.admin.description";
@@ -73,6 +74,8 @@ final class BlockRegenMessages {
     static final String UI_TOOLTIP_ADD_FLOOR = "blockregen.ui.tooltip.addFloor";
     static final String UI_TOOLTIP_ADD_RADIUS = "blockregen.ui.tooltip.addRadius";
     static final String UI_TOOLTIP_ADD_BLOCK_ALREADY_SET = "blockregen.ui.tooltip.addBlockAlreadySet";
+    static final String UI_TOOLTIP_ROW_REGROWTH = "blockregen.ui.tooltip.rowRegrowth";
+    static final String UI_TOOLTIP_ADD_REGROWTH = "blockregen.ui.tooltip.addRegrowth";
 
     static final String UI_TOOLTIP_SCOPE_DROPDOWN = "blockregen.ui.tooltip.scopeDropdown";
     static final String UI_TOOLTIP_INDEPENDENT_TOGGLE = "blockregen.ui.tooltip.independentToggle";

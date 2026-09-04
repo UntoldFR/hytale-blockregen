@@ -2,6 +2,18 @@
 
 All notable changes to the plugin are documented here.
 
+## [1.4.0]
+
+### Added
+- **`--regrowth`**: a new per-rule flag for log blocks. When enabled, a
+  broken log doesn't respawn as itself - instead, if there's still a
+  grass floor underneath at regen time, BlockRegen plants a sapling of
+  the matching tree species instead (falls back to the plain log if the
+  floor isn't grass anymore, or if that species has no sapling). Works
+  together with `--floor`/`radius`. Toggle it per row (or in the add
+  panel) in `/blockregen list`, same as the Floor toggle - including
+  per-CustomAreas-area overrides.
+
 ## [1.3.0]
 
 ### Added

@@ -70,6 +70,12 @@ public class BlockRegenPlugin extends JavaPlugin {
     // du bloc casse.
     private Map<String, Integer> radiusRules;
 
+    // blockId -> a la regeneration, essaie de planter une jeune pousse
+    // (espece deduite du tronc casse) a la place du rondin, si un sol
+    // "cultivable" (herbe) est present. Voir BlockRegenListener#resolveSapling
+    // et #hasGrowableFloor pour la logique de detection.
+    private Map<String, Boolean> regrowthRules;
+
     // Surcharges par zone CustomAreas (nom de l'area -> blockId -> valeur) :
     // une area taguee BLOCKREGEN herite des regles globales ci-dessus mais
     // peut ajouter/remplacer une regle pour un blockId donne. Voir
@@ -77,6 +83,7 @@ public class BlockRegenPlugin extends JavaPlugin {
     private Map<String, Map<String, Integer>> areaDelayRules;
     private Map<String, Map<String, Boolean>> areaNeedFloorRules;
     private Map<String, Map<String, Integer>> areaRadiusRules;
+    private Map<String, Map<String, Boolean>> areaRegrowthRules;
 
     // Nom d'area -> true si elle ignore entierement les regles globales et
     // n'utilise que ses propres regles (voir resolveEffectiveRule()).
@@ -134,9 +141,11 @@ public class BlockRegenPlugin extends JavaPlugin {
         regenRules = config.get().rules;
         needFloorRules = config.get().needFloor;
         radiusRules = config.get().radius;
+        regrowthRules = config.get().regrowth;
         areaDelayRules = config.get().areaDelay;
         areaNeedFloorRules = config.get().areaNeedFloor;
         areaRadiusRules = config.get().areaRadius;
+        areaRegrowthRules = config.get().areaRegrowth;
         independentAreas = config.get().independentAreas;
         pendingRegenRecords = config.get().pendingRegens;
         adminBypassPlayers = config.get().adminBypass;
@@ -267,6 +276,7 @@ public class BlockRegenPlugin extends JavaPlugin {
         boolean removed = regenRules.remove(blockId) != null;
         needFloorRules.remove(blockId);
         radiusRules.remove(blockId);
+        regrowthRules.remove(blockId);
         if (removed) {
             persist();
         }
@@ -312,6 +322,21 @@ public class BlockRegenPlugin extends JavaPlugin {
         return radiusRules.getOrDefault(blockId, 0);
     }
 
+    /** Active/desactive, pour ce blockId, la plantation d'une jeune pousse a la regeneration, et persiste. */
+    public void setRegrowth(String blockId, boolean regrowth) {
+        if (regrowth) {
+            regrowthRules.put(blockId, true);
+        } else {
+            regrowthRules.remove(blockId);
+        }
+        persist();
+    }
+
+    /** True si ce blockId doit tenter de planter une jeune pousse a la regeneration (false par defaut). */
+    public boolean isRegrowthFor(String blockId) {
+        return regrowthRules.getOrDefault(blockId, false);
+    }
+
     /** The reflective, optional bridge to the CustomAreas plugin (never null; check {@code isPresent()}). */
     @Nonnull
     public CustomAreasBridge getCustomAreasBridge() {
@@ -340,7 +365,9 @@ public class BlockRegenPlugin extends JavaPlugin {
         if (delay == null) {
             return null;
         }
-        return new EffectiveRule(delay, needFloorRules.getOrDefault(blockId, false), radiusRules.getOrDefault(blockId, 0));
+        return new EffectiveRule(
+            delay, needFloorRules.getOrDefault(blockId, false), radiusRules.getOrDefault(blockId, 0), regrowthRules.getOrDefault(blockId, false)
+        );
     }
 
     /** This area's own explicit rule for this blockId, or null if it has none (falls back to global, unless independent). */
@@ -352,7 +379,8 @@ public class BlockRegenPlugin extends JavaPlugin {
         }
         boolean needFloor = areaNeedFloorRules.getOrDefault(areaName, Map.of()).getOrDefault(blockId, false);
         int radius = areaRadiusRules.getOrDefault(areaName, Map.of()).getOrDefault(blockId, 0);
-        return new EffectiveRule(delay, needFloor, radius);
+        boolean regrowth = areaRegrowthRules.getOrDefault(areaName, Map.of()).getOrDefault(blockId, false);
+        return new EffectiveRule(delay, needFloor, radius, regrowth);
     }
 
     /** Block ids this area has its own explicit rule for (does not include inherited global block ids). */
@@ -387,11 +415,22 @@ public class BlockRegenPlugin extends JavaPlugin {
         persist();
     }
 
+    /** Sets this area's own "regrowth" override for this blockId, and persists. */
+    public void setAreaRegrowth(@Nonnull String areaName, @Nonnull String blockId, boolean regrowth) {
+        if (regrowth) {
+            areaRegrowthRules.computeIfAbsent(areaName, k -> new ConcurrentHashMap<>()).put(blockId, true);
+        } else {
+            areaRegrowthRules.getOrDefault(areaName, Map.of()).remove(blockId);
+        }
+        persist();
+    }
+
     /** Removes this area's own override for this blockId (it then falls back to inheriting global, unless independent). */
     public void removeAreaRule(@Nonnull String areaName, @Nonnull String blockId) {
         areaDelayRules.getOrDefault(areaName, Map.of()).remove(blockId);
         areaNeedFloorRules.getOrDefault(areaName, Map.of()).remove(blockId);
         areaRadiusRules.getOrDefault(areaName, Map.of()).remove(blockId);
+        areaRegrowthRules.getOrDefault(areaName, Map.of()).remove(blockId);
         persist();
     }
 
@@ -410,7 +449,7 @@ public class BlockRegenPlugin extends JavaPlugin {
     }
 
     /** Rule that actually applies for a given block/scope, resolved by {@link #resolveEffectiveRule}. */
-    public record EffectiveRule(int delaySeconds, boolean needFloor, int radius) {
+    public record EffectiveRule(int delaySeconds, boolean needFloor, int radius, boolean regrowth) {
     }
 
     private void persist() {
@@ -438,9 +477,9 @@ public class BlockRegenPlugin extends JavaPlugin {
      * l'arret propre) pour supporter aussi un crash/coupure brutale.
      */
     public void persistPendingRegenRecord(
-        @Nonnull World world, int x, int y, int z, @Nonnull String blockId, long respawnAtMillis, boolean needFloor, int radius
+        @Nonnull World world, int x, int y, int z, @Nonnull String blockId, long respawnAtMillis, boolean needFloor, int radius, boolean regrowth
     ) {
-        pendingRegenRecords.put(pendingRegenKey(world, x, y, z), new PendingRegenRecord(world.getName(), x, y, z, blockId, respawnAtMillis, needFloor, radius));
+        pendingRegenRecords.put(pendingRegenKey(world, x, y, z), new PendingRegenRecord(world.getName(), x, y, z, blockId, respawnAtMillis, needFloor, radius, regrowth));
         persist();
     }
 
@@ -693,6 +732,7 @@ public class BlockRegenPlugin extends JavaPlugin {
             .append(new KeyedCodec<>("RespawnAtMillis", Codec.LONG), (r, l) -> r.respawnAtMillis = l, r -> r.respawnAtMillis).add()
             .append(new KeyedCodec<>("NeedFloor", Codec.BOOLEAN), (r, b) -> r.needFloor = b, r -> r.needFloor).add()
             .append(new KeyedCodec<>("Radius", Codec.INTEGER), (r, i) -> r.radius = i, r -> r.radius).add()
+            .append(new KeyedCodec<>("Regrowth", Codec.BOOLEAN, false), (r, b) -> r.regrowth = b, r -> r.regrowth).add()
             .build();
 
         private String world;
@@ -703,11 +743,12 @@ public class BlockRegenPlugin extends JavaPlugin {
         private long respawnAtMillis;
         private boolean needFloor;
         private int radius;
+        private boolean regrowth;
 
         public PendingRegenRecord() {
         }
 
-        public PendingRegenRecord(String world, int x, int y, int z, String blockId, long respawnAtMillis, boolean needFloor, int radius) {
+        public PendingRegenRecord(String world, int x, int y, int z, String blockId, long respawnAtMillis, boolean needFloor, int radius, boolean regrowth) {
             this.world = world;
             this.x = x;
             this.y = y;
@@ -716,6 +757,7 @@ public class BlockRegenPlugin extends JavaPlugin {
             this.respawnAtMillis = respawnAtMillis;
             this.needFloor = needFloor;
             this.radius = radius;
+            this.regrowth = regrowth;
         }
 
         public String world() {
@@ -749,6 +791,10 @@ public class BlockRegenPlugin extends JavaPlugin {
         public int radius() {
             return radius;
         }
+
+        public boolean regrowth() {
+            return regrowth;
+        }
     }
 
     /** Configuration persistee sur disque (JSON) contenant les regles de regeneration. */
@@ -765,6 +811,8 @@ public class BlockRegenPlugin extends JavaPlugin {
             .add()
             .append(new KeyedCodec<>("Radius", new MapCodec<Integer, Map<String, Integer>>(Codec.INTEGER, ConcurrentHashMap::new, false), false), (c, m) -> c.radius = m, c -> c.radius)
             .add()
+            .append(new KeyedCodec<>("Regrowth", new MapCodec<Boolean, Map<String, Boolean>>(Codec.BOOLEAN, ConcurrentHashMap::new, false), false), (c, m) -> c.regrowth = m, c -> c.regrowth)
+            .add()
             // Per-CustomAreas-area overrides (nom d'area -> blockId -> valeur),
             // et zones marquees "independantes". Cles optionnelles : absentes
             // sur un config existant, elles restent simplement des maps vides.
@@ -779,6 +827,10 @@ public class BlockRegenPlugin extends JavaPlugin {
             .append(new KeyedCodec<>("AreaRadius", new MapCodec<Map<String, Integer>, Map<String, Map<String, Integer>>>(
                 new MapCodec<Integer, Map<String, Integer>>(Codec.INTEGER, ConcurrentHashMap::new, false), ConcurrentHashMap::new, false), false),
                 (c, m) -> c.areaRadius = m, c -> c.areaRadius)
+            .add()
+            .append(new KeyedCodec<>("AreaRegrowth", new MapCodec<Map<String, Boolean>, Map<String, Map<String, Boolean>>>(
+                new MapCodec<Boolean, Map<String, Boolean>>(Codec.BOOLEAN, ConcurrentHashMap::new, false), ConcurrentHashMap::new, false), false),
+                (c, m) -> c.areaRegrowth = m, c -> c.areaRegrowth)
             .add()
             .append(new KeyedCodec<>("IndependentAreas", new MapCodec<Boolean, Map<String, Boolean>>(Codec.BOOLEAN, ConcurrentHashMap::new, false), false),
                 (c, m) -> c.independentAreas = m, c -> c.independentAreas)
@@ -800,9 +852,11 @@ public class BlockRegenPlugin extends JavaPlugin {
         private Map<String, Integer> rules = new ConcurrentHashMap<>();
         private Map<String, Boolean> needFloor = new ConcurrentHashMap<>();
         private Map<String, Integer> radius = new ConcurrentHashMap<>();
+        private Map<String, Boolean> regrowth = new ConcurrentHashMap<>();
         private Map<String, Map<String, Integer>> areaDelay = new ConcurrentHashMap<>();
         private Map<String, Map<String, Boolean>> areaNeedFloor = new ConcurrentHashMap<>();
         private Map<String, Map<String, Integer>> areaRadius = new ConcurrentHashMap<>();
+        private Map<String, Map<String, Boolean>> areaRegrowth = new ConcurrentHashMap<>();
         private Map<String, Boolean> independentAreas = new ConcurrentHashMap<>();
         private Map<String, PendingRegenRecord> pendingRegens = new ConcurrentHashMap<>();
         private Map<String, Boolean> adminBypass = new ConcurrentHashMap<>();

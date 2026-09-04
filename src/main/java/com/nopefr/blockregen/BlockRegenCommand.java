@@ -18,6 +18,7 @@ import java.util.concurrent.CompletableFuture;
  *   /blockregen "Stone" 120        -> "Stone" blocks respawn 120 seconds after being broken (no unit = minutes)
  *   /blockregen "Stone" 90s        -> same, but with an explicit unit (h/m/s)
  *   /blockregen "Poppy" 120 --floor --radius 3 -> also requires a floor and scatters the respawn within 3 blocks
+ *   /blockregen "Wood_Oak_Trunk" 300 --regrowth -> plants a sapling instead of the log if there's still grass underneath
  *   /blockregen "Stone" 0 --remove -> removes the rule for "Stone"
  *   /blockregen list                -> lists configured blocks and their delay
  *   /blockregen 90s                 -> (see BlockRegenTargetCommand) applies to the block you are looking at, with confirmation
@@ -31,6 +32,7 @@ public class BlockRegenCommand extends AbstractCommand {
     private final FlagArg removeFlag;
     private final FlagArg floorFlag;
     private final DefaultArg<Integer> radiusArg;
+    private final FlagArg regrowthFlag;
 
     public BlockRegenCommand(BlockRegenPlugin plugin) {
         super("blockregen", BlockRegenMessages.COMMAND_DESCRIPTION);
@@ -41,6 +43,7 @@ public class BlockRegenCommand extends AbstractCommand {
         removeFlag = withFlagArg("remove", BlockRegenMessages.FLAG_REMOVE);
         floorFlag = withFlagArg("floor", BlockRegenMessages.FLAG_FLOOR);
         radiusArg = withDefaultArg("radius", BlockRegenMessages.ARG_RADIUS, ArgTypes.INTEGER, 0, "0");
+        regrowthFlag = withFlagArg("regrowth", BlockRegenMessages.FLAG_REGROWTH);
 
         addSubCommand(new BlockRegenListCommand(plugin));
         addSubCommand(new BlockRegenAdminCommand(plugin));
@@ -80,6 +83,7 @@ public class BlockRegenCommand extends AbstractCommand {
         plugin.setRule(blockType.getId(), seconds);
         plugin.setNeedFloor(blockType.getId(), floorFlag.get(context));
         plugin.setRadius(blockType.getId(), radiusArg.get(context));
+        plugin.setRegrowth(blockType.getId(), regrowthFlag.get(context));
         context.sendMessage(Message.translation(BlockRegenMessages.RULE_SET)
             .param("block", blockType.getId())
             .param("duration", DurationParser.formatSeconds(seconds)));

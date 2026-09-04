@@ -30,6 +30,13 @@ directly beneath it (`--floor`), and can respawn at a random valid spot
 within 3 blocks of the original break point (`--radius`).
 
 ```
+/blockregen "Wood_Oak_Trunk" 300 --regrowth
+```
+-> Same thing, but instead of respawning the exact log, it tries to plant
+a matching sapling if there's still a grass floor underneath at the time
+it regenerates (see [Tree regrowth](#tree-regrowth-regrowth) below).
+
+```
 /blockregen "Stone" 0 --remove
 ```
 -> Removes the regeneration rule for "Stone".
@@ -89,6 +96,27 @@ above it showing the remaining time ("Regenerates in 45s"). This preview
 is only visible to players with the dedicated permission (see
 [Permissions](#permissions) below) - other players simply see the empty
 spot, as usual.
+
+### Tree regrowth (`--regrowth`)
+
+When enabled on a log's rule, a broken log doesn't respawn as the exact
+same log - instead, at regen time, BlockRegen tries to plant a sapling
+of the matching tree species:
+
+- The log's species is read straight from its block id (`Wood_<Species>_Trunk...`)
+  and matched to a sapling with the same species (`Plant_Sapling_<Species>`),
+  verified against the game's own block registry - no manual list to
+  maintain, and it just works for any tree species the game adds later.
+- A sapling only gets planted if there's still a "grass" floor block
+  (any `Soil_Grass*` variant) directly beneath the target spot at the
+  moment the timer fires - plain dirt doesn't count. If the floor isn't
+  grass, or the log's species has no matching sapling (a few don't, e.g.
+  fir), it just falls back to respawning the plain log as usual.
+- Works together with `--floor`/`radius`: the target spot is picked by
+  the same existing logic, and the sapling (or log) is placed wherever
+  that lands - so a scattered log rule scatters saplings too.
+- Toggle it per row (or in the add panel) in `/blockregen list` the same
+  way as the Floor toggle.
 
 ### CustomAreas integration (optional)
 

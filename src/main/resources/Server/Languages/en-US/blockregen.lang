@@ -26,6 +26,7 @@ command.blockregen.arg.duration = Delay before regeneration (e.g. 90, 90s, 5m, 2
 command.blockregen.flag.remove = Removes the rule instead of creating it
 command.blockregen.flag.floor = Requires a solid block underneath before regenerating
 command.blockregen.arg.radius = Radius (in blocks) to scatter the respawn within, around the break point (0 = exact spot)
+command.blockregen.flag.regrowth = Plants a matching sapling instead of the log if a grass floor is still there (see README)
 command.list.description = Lists the blocks currently configured to regenerate, with their delay
 command.target.description = Configure regeneration for the block you are currently looking at
 command.admin.description = Toggle admin bypass: blocks you place will still be able to regenerate
@@ -69,7 +70,7 @@ message.adminBypassOff = Blocks you place from now on will NOT regenerate (anti-
 
 # --- "/blockregen help" ---
 message.helpHeader = BlockRegen commands:
-message.helpLineMain = /blockregen "<block>" <duration> [--remove] [--floor] [radius] - create/edit/remove a global regeneration rule
+message.helpLineMain = /blockregen "<block>" <duration> [--remove] [--floor] [--regrowth] [radius] - create/edit/remove a global regeneration rule
 message.helpLineTarget = /blockregen <duration> - apply to the block you're looking at (player only, asks for chat confirmation)
 message.helpLineList = /blockregen list - open the rules UI (Global + CustomAreas areas, if installed)
 message.helpLineAdmin = /blockregen admin - toggle your personal anti-abuse placement bypass
@@ -100,6 +101,13 @@ ui.tooltip.rowRadius = Radius (in blocks) to scatter the respawn within around t
 ui.tooltip.addFloor = Toggle: require a solid block underneath before the picked block regenerates
 ui.tooltip.addRadius = Radius (in blocks) to scatter the respawn within around the break point (0 = exact spot)
 ui.tooltip.addBlockAlreadySet = This block already has a rule in the current scope - picking it edits that rule
+
+# Regrowth toggle, per row and in the "add a new rule" panel: plants a
+# matching sapling instead of the log on regeneration, if there's still a
+# grass floor underneath at that time (falls back to the plain log
+# otherwise, or if this block type has no matching sapling).
+ui.tooltip.rowRegrowth = Toggle: plant a matching sapling instead of the log, if there's still grass underneath
+ui.tooltip.addRegrowth = Toggle: plant a matching sapling instead of the log, if there's still grass underneath
 
 # Scope selector (CustomAreas integration): switches between editing the
 # global rules and a CustomAreas area flagged BLOCKREGEN.
