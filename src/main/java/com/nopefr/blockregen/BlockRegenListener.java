@@ -114,12 +114,12 @@ public class BlockRegenListener extends EntityEventSystem<EntityStore, BreakBloc
 
         int delaySeconds = rule.delaySeconds();
         long respawnAtMillis = System.currentTimeMillis() + delaySeconds * 1000L;
-        Ref<EntityStore> ghostRef = spawnGhost(store, holder -> commandBuffer.addEntity(holder, AddReason.SPAWN), x, y, z, brokenType, delaySeconds);
-        if (ghostRef != null) {
-            plugin.trackPendingGhost(world, ghostRef, brokenType.getId(), respawnAtMillis);
+        GhostEntities ghosts = spawnGhost(store, holder -> commandBuffer.addEntity(holder, AddReason.SPAWN), x, y, z, brokenType, delaySeconds);
+        if (ghosts != null) {
+            plugin.trackPendingGhost(world, ghosts.nameplateRef(), brokenType.getId(), respawnAtMillis);
         }
 
-        scheduleRegen(world, x, y, z, brokenType, delaySeconds, respawnAtMillis, rule.needFloor(), rule.radius(), ghostRef);
+        scheduleRegen(world, x, y, z, brokenType, delaySeconds, respawnAtMillis, rule.needFloor(), rule.radius(), ghosts);
     }
 
     /**
@@ -157,26 +157,61 @@ public class BlockRegenListener extends EntityEventSystem<EntityStore, BreakBloc
 
             int delaySeconds = (int) Math.max(0, (record.respawnAtMillis() - System.currentTimeMillis()) / 1000);
             Store<EntityStore> store = world.getEntityStore().getStore();
-            Ref<EntityStore> ghostRef = spawnGhost(store, holder -> store.addEntity(holder, AddReason.SPAWN), record.x(), record.y(), record.z(), blockType, delaySeconds);
-            if (ghostRef != null) {
-                plugin.trackPendingGhost(world, ghostRef, record.blockId(), record.respawnAtMillis());
+            GhostEntities ghosts = spawnGhost(store, holder -> store.addEntity(holder, AddReason.SPAWN), record.x(), record.y(), record.z(), blockType, delaySeconds);
+            if (ghosts != null) {
+                plugin.trackPendingGhost(world, ghosts.nameplateRef(), record.blockId(), record.respawnAtMillis());
             }
 
-            scheduleRegen(world, record.x(), record.y(), record.z(), blockType, delaySeconds, record.respawnAtMillis(), record.needFloor(), record.radius(), ghostRef);
+            scheduleRegen(world, record.x(), record.y(), record.z(), blockType, delaySeconds, record.respawnAtMillis(), record.needFloor(), record.radius(), ghosts);
         });
     }
 
+    // Decalage vertical (en blocs) de l'ancre du nameplate par rapport au coin
+    // bas du bloc : NPC_Spawn_Marker est dimensionne pour un PNJ complet, donc
+    // sans ce decalage vers le bas le texte flotte environ 1 bloc trop haut
+    // au-dessus d'un fantome qui ne fait qu'1 bloc de haut.
+    private static final double NAMEPLATE_Y_OFFSET = -1.0;
+
     /**
-     * Spawns a small, non-solid marker entity at the broken block's position with a floating countdown nameplate,
-     * visible only to permitted players. The entity is added via {@code adder} rather than a hardcoded Store/CommandBuffer
-     * call: from within an ECS event handler (a fresh break), the Store is mid-processing and mutations must go
-     * through the CommandBuffer instead; from a deferred world.execute() callback (restoring a persisted regen after
-     * a restart, no ECS event in progress), adding directly via the Store is required instead since there's no
-     * CommandBuffer available there. Both shapes are {@code Holder -> Ref}, see the two call sites.
+     * Holds the two entities that make up one ghost preview:
+     * <ul>
+     *   <li>{@code blockRef} - the block-shaped, collision-free visual (PrefabPreview), anchored exactly at the
+     *       block's corner so it renders in the right grid cell (BlockChange only takes integer local offsets, so
+     *       this entity's transform can't be shifted without breaking the cube's position);</li>
+     *   <li>{@code nameplateRef} - a separate, invisible marker centered on the block (and shifted down, see
+     *       {@link #NAMEPLATE_Y_OFFSET}) purely to anchor the floating countdown Nameplate somewhere better than
+     *       the block's corner.</li>
+     * </ul>
+     * Both carry {@link BlockRegenGhostMarker}, so {@link BlockRegenGhostVisibilitySystem} hides both uniformly
+     * for players without the ghost permission.
+     */
+    public record GhostEntities(@Nonnull Ref<EntityStore> blockRef, @Nonnull Ref<EntityStore> nameplateRef) {
+    }
+
+    /**
+     * Spawns the two entities of one ghost preview (see {@link GhostEntities}) at the broken block's position.
+     * Entities are added via {@code adder} rather than a hardcoded Store/CommandBuffer call: from within an ECS
+     * event handler (a fresh break), the Store is mid-processing and mutations must go through the CommandBuffer
+     * instead; from a deferred world.execute() callback (restoring a persisted regen after a restart, no ECS event
+     * in progress), adding directly via the Store is required instead since there's no CommandBuffer available
+     * there. Both shapes are {@code Holder -> Ref}, see the two call sites.
      */
     @Nullable
-    private Ref<EntityStore> spawnGhost(
+    private GhostEntities spawnGhost(
         @Nonnull Store<EntityStore> store, @Nonnull Function<Holder<EntityStore>, Ref<EntityStore>> adder, int x, int y, int z, @Nonnull BlockType blockType, int delaySeconds
+    ) {
+        Ref<EntityStore> blockRef = spawnGhostBlock(store, adder, x, y, z);
+        Ref<EntityStore> nameplateRef = spawnGhostNameplate(store, adder, x, y, z, blockType, delaySeconds);
+        if (blockRef == null || nameplateRef == null) {
+            return null;
+        }
+        return new GhostEntities(blockRef, nameplateRef);
+    }
+
+    /** The block-shaped, collision-free preview itself - see {@link GhostEntities}. */
+    @Nullable
+    private Ref<EntityStore> spawnGhostBlock(
+        @Nonnull Store<EntityStore> store, @Nonnull Function<Holder<EntityStore>, Ref<EntityStore>> adder, int x, int y, int z
     ) {
         Holder<EntityStore> holder = store.getRegistry().newHolder();
         holder.addComponent(NetworkId.getComponentType(), new NetworkId(store.getExternalData().takeNextNetworkId()));
@@ -192,6 +227,29 @@ public class BlockRegenListener extends EntityEventSystem<EntityStore, BreakBloc
             PrefabPreview preview = new PrefabPreview(blocks, new FluidChange[0], Integer.MAX_VALUE, DEFAULT_BIOME_TINT, DEFAULT_WATER_TINT);
             holder.addComponent(PrefabPreview.getComponentType(), preview);
         }
+
+        holder.addComponent(BlockRegenGhostMarker.getComponentType(), BlockRegenGhostMarker.INSTANCE);
+        holder.ensureComponent(UUIDComponent.getComponentType());
+        holder.ensureComponent(Intangible.getComponentType());
+
+        return adder.apply(holder);
+    }
+
+    /**
+     * The invisible marker entity that anchors the floating countdown Nameplate, centered horizontally on the
+     * block and shifted down (see {@link #NAMEPLATE_Y_OFFSET}) - kept separate from the block visual above since
+     * a Nameplate always floats a fixed height above its anchor's own model (here NPC_Spawn_Marker, sized for a
+     * full NPC) with no per-instance override, so shifting where we place this anchor is the only lever we have.
+     */
+    @Nullable
+    private Ref<EntityStore> spawnGhostNameplate(
+        @Nonnull Store<EntityStore> store, @Nonnull Function<Holder<EntityStore>, Ref<EntityStore>> adder, int x, int y, int z, @Nonnull BlockType blockType, int delaySeconds
+    ) {
+        Holder<EntityStore> holder = store.getRegistry().newHolder();
+        holder.addComponent(NetworkId.getComponentType(), new NetworkId(store.getExternalData().takeNextNetworkId()));
+        holder.addComponent(TransformComponent.getComponentType(), new TransformComponent(
+            new Vector3d(x + 0.5, y + NAMEPLATE_Y_OFFSET, z + 0.5), new Rotation3f()
+        ));
 
         // Un Nameplate a besoin d'un ModelComponent sur la meme entite pour
         // avoir un point d'ancrage cote client (confirme via plusieurs
@@ -215,7 +273,7 @@ public class BlockRegenListener extends EntityEventSystem<EntityStore, BreakBloc
     }
 
     private void scheduleRegen(
-        World world, int x, int y, int z, BlockType blockType, int delaySeconds, long respawnAtMillis, boolean needFloor, int radius, @Nullable Ref<EntityStore> ghostRef
+        World world, int x, int y, int z, BlockType blockType, int delaySeconds, long respawnAtMillis, boolean needFloor, int radius, @Nullable GhostEntities ghosts
     ) {
         @SuppressWarnings("unchecked")
         ScheduledFuture<Void> future = (ScheduledFuture<Void>) HytaleServer.SCHEDULED_EXECUTOR.schedule(
@@ -243,7 +301,7 @@ public class BlockRegenListener extends EntityEventSystem<EntityStore, BreakBloc
                     } finally {
                         plugin.untrackActiveRegen(world, x, y, z);
                         plugin.removePendingRegenRecord(world, x, y, z);
-                        removeGhost(world, ghostRef);
+                        removeGhost(world, ghosts);
                     }
                 });
             },
@@ -251,7 +309,7 @@ public class BlockRegenListener extends EntityEventSystem<EntityStore, BreakBloc
             TimeUnit.SECONDS
         );
 
-        plugin.trackActiveRegen(world, x, y, z, future, ghostRef);
+        plugin.trackActiveRegen(world, x, y, z, future, ghosts);
         // Persiste sur disque pour survivre a un arret du serveur/monde avant
         // que le delai soit ecoule (voir BlockRegenPlugin#start()).
         plugin.persistPendingRegenRecord(world, x, y, z, blockType.getId(), respawnAtMillis, needFloor, radius);
@@ -305,8 +363,8 @@ public class BlockRegenListener extends EntityEventSystem<EntityStore, BreakBloc
         return below != null && below != BlockType.EMPTY;
     }
 
-    private void removeGhost(@Nonnull World world, @Nullable Ref<EntityStore> ghostRef) {
-        plugin.removeGhostEntity(world, ghostRef);
+    private void removeGhost(@Nonnull World world, @Nullable GhostEntities ghosts) {
+        plugin.removeGhostEntity(world, ghosts);
     }
 
     @Nullable

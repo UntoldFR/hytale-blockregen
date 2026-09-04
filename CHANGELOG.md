@@ -2,6 +2,22 @@
 
 All notable changes to the plugin are documented here.
 
+## [1.3.0]
+
+### Added
+- Players with the `/blockregen admin` permission now get a reminder of
+  their current bypass state (ON/OFF) when they connect, in case they
+  left it on from a previous session.
+
+### Changed
+- The admin bypass chat message and notification title now start with
+  "BlockRegen:" so it's clear which mod they're coming from.
+
+### Fixed
+- The ghost preview's floating countdown text is no longer offset into
+  a corner of the block and floating noticeably too high - it's now
+  centered on the block and positioned just above it.
+
 ## [1.2.3]
 
 ### Fixed

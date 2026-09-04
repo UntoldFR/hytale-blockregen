@@ -9,10 +9,12 @@ import com.hypixel.hytale.component.ComponentType;
 import com.hypixel.hytale.component.Ref;
 import com.hypixel.hytale.component.RemoveReason;
 import com.hypixel.hytale.component.Store;
+import com.hypixel.hytale.protocol.packets.interface_.NotificationStyle;
 import com.hypixel.hytale.server.core.HytaleServer;
 import com.hypixel.hytale.server.core.Message;
 import com.hypixel.hytale.server.core.entity.nameplate.Nameplate;
 import com.hypixel.hytale.server.core.event.events.player.PlayerChatEvent;
+import com.hypixel.hytale.server.core.event.events.player.PlayerConnectEvent;
 import com.hypixel.hytale.server.core.modules.entity.tracker.EntityTrackerSystems;
 import com.hypixel.hytale.server.core.permissions.PermissionsModule;
 import com.hypixel.hytale.server.core.plugin.JavaPlugin;
@@ -22,6 +24,7 @@ import com.hypixel.hytale.server.core.universe.Universe;
 import com.hypixel.hytale.server.core.universe.world.World;
 import com.hypixel.hytale.server.core.universe.world.storage.EntityStore;
 import com.hypixel.hytale.server.core.util.Config;
+import com.hypixel.hytale.server.core.util.NotificationUtil;
 
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
@@ -119,6 +122,7 @@ public class BlockRegenPlugin extends JavaPlugin {
 
     private ComponentType<EntityStore, BlockRegenGhostMarker> ghostMarkerComponentType;
     private String ghostPermission;
+    private String adminPermission;
 
     public BlockRegenPlugin(JavaPluginInit init) {
         super(init);
@@ -164,6 +168,11 @@ public class BlockRegenPlugin extends JavaPlugin {
         // Ecoute le chat pour recuperer les reponses Y/N de confirmation
         // (voir BlockRegenTargetCommand, utilise quand aucun bloc n'est precise).
         getEventRegistry().registerGlobal(PlayerChatEvent.class, this::handleChat);
+
+        // Rappelle son etat de bypass admin a un joueur ayant la permission
+        // /blockregen admin des sa connexion (utile s'il l'avait laisse actif).
+        adminPermission = getBasePermission() + ".command.blockregen.admin";
+        getEventRegistry().registerGlobal(PlayerConnectEvent.class, this::handlePlayerConnect);
 
         // Rafraichit le texte "<bloc>: regenerates in Xs" des marqueurs fantomes chaque seconde.
         @SuppressWarnings("unchecked")
@@ -234,15 +243,14 @@ public class BlockRegenPlugin extends JavaPlugin {
     }
 
     private void despawnAllTrackedGhosts() {
-        for (PendingGhost pending : pendingGhosts) {
-            World world = pending.world();
-            Ref<EntityStore> ghostRef = pending.ghostRef();
-            if (world.isAlive() && ghostRef.isValid()) {
-                world.execute(() -> {
-                    if (ghostRef.isValid()) {
-                        world.getEntityStore().getStore().removeEntity(ghostRef, RemoveReason.REMOVE);
-                    }
-                });
+        // Iterated via activeRegens (has both entities of each ghost, see
+        // BlockRegenListener.GhostEntities) rather than pendingGhosts (which
+        // only tracks the nameplate entity, for the per-second text refresh).
+        for (Map.Entry<PositionKey, ActiveRegen> entry : activeRegens.entrySet()) {
+            World world = entry.getKey().world();
+            BlockRegenListener.GhostEntities ghosts = entry.getValue().ghosts();
+            if (ghosts != null && world.isAlive()) {
+                removeGhostEntity(world, ghosts);
             }
         }
         pendingGhosts.clear();
@@ -414,8 +422,8 @@ public class BlockRegenPlugin extends JavaPlugin {
      * du bloc casse, pour pouvoir l'annuler si un joueur pose un bloc au meme
      * endroit avant la fin du delai (voir {@link #cancelPendingRegenAt}).
      */
-    public void trackActiveRegen(@Nonnull World world, int x, int y, int z, @Nonnull Future<?> future, @Nullable Ref<EntityStore> ghostRef) {
-        activeRegens.put(new PositionKey(world, x, y, z), new ActiveRegen(future, ghostRef));
+    public void trackActiveRegen(@Nonnull World world, int x, int y, int z, @Nonnull Future<?> future, @Nullable BlockRegenListener.GhostEntities ghosts) {
+        activeRegens.put(new PositionKey(world, x, y, z), new ActiveRegen(future, ghosts));
     }
 
     /** Arrete de suivre la regeneration en attente a cette position (elle vient de se produire, normalement). */
@@ -466,38 +474,46 @@ public class BlockRegenPlugin extends JavaPlugin {
             return;
         }
         active.future().cancel(false);
-        removeGhostEntity(commandBuffer, active.ghostRef());
+        removeGhostEntity(commandBuffer, active.ghosts());
         removePendingRegenRecord(world, x, y, z);
     }
 
     /**
-     * Retire un marqueur fantome via un CommandBuffer, s'il existe encore.
-     * A utiliser depuis un gestionnaire d'evenement ECS (voir cancelPendingRegenAt).
+     * Retire les deux entites d'un fantome (voir {@link BlockRegenListener.GhostEntities}) via un
+     * CommandBuffer, si elles existent encore. A utiliser depuis un gestionnaire d'evenement ECS
+     * (voir cancelPendingRegenAt).
      */
-    public void removeGhostEntity(@Nonnull CommandBuffer<EntityStore> commandBuffer, @Nullable Ref<EntityStore> ghostRef) {
-        if (ghostRef == null) {
+    public void removeGhostEntity(@Nonnull CommandBuffer<EntityStore> commandBuffer, @Nullable BlockRegenListener.GhostEntities ghosts) {
+        if (ghosts == null) {
             return;
         }
-        untrackPendingGhost(ghostRef);
-        if (ghostRef.isValid()) {
-            commandBuffer.removeEntity(ghostRef, RemoveReason.REMOVE);
+        untrackPendingGhost(ghosts.nameplateRef());
+        if (ghosts.blockRef().isValid()) {
+            commandBuffer.removeEntity(ghosts.blockRef(), RemoveReason.REMOVE);
+        }
+        if (ghosts.nameplateRef().isValid()) {
+            commandBuffer.removeEntity(ghosts.nameplateRef(), RemoveReason.REMOVE);
         }
     }
 
     /**
-     * Retire un marqueur fantome du monde directement via le Store, s'il
-     * existe encore. Uniquement sur au thread du monde EN DEHORS d'un
-     * gestionnaire d'evenement ECS (ex: depuis world.execute() a la fin
-     * d'une regeneration planifiee) - voir removeGhostEntity(CommandBuffer, Ref)
-     * pour l'equivalent utilisable depuis un gestionnaire d'evenement.
+     * Retire les deux entites d'un fantome du monde directement via le Store, si elles existent
+     * encore. Uniquement sur le thread du monde EN DEHORS d'un gestionnaire d'evenement ECS (ex:
+     * depuis world.execute() a la fin d'une regeneration planifiee) - voir
+     * removeGhostEntity(CommandBuffer, GhostEntities) pour l'equivalent utilisable depuis un
+     * gestionnaire d'evenement.
      */
-    public void removeGhostEntity(@Nonnull World world, @Nullable Ref<EntityStore> ghostRef) {
-        if (ghostRef == null) {
+    public void removeGhostEntity(@Nonnull World world, @Nullable BlockRegenListener.GhostEntities ghosts) {
+        if (ghosts == null) {
             return;
         }
-        untrackPendingGhost(ghostRef);
-        if (ghostRef.isValid()) {
-            world.getEntityStore().getStore().removeEntity(ghostRef, RemoveReason.REMOVE);
+        untrackPendingGhost(ghosts.nameplateRef());
+        Store<EntityStore> store = world.getEntityStore().getStore();
+        if (ghosts.blockRef().isValid()) {
+            store.removeEntity(ghosts.blockRef(), RemoveReason.REMOVE);
+        }
+        if (ghosts.nameplateRef().isValid()) {
+            store.removeEntity(ghosts.nameplateRef(), RemoveReason.REMOVE);
         }
     }
 
@@ -574,6 +590,36 @@ public class BlockRegenPlugin extends JavaPlugin {
         }
     }
 
+    /** Reminds a player with the /blockregen admin permission of their current bypass state when they connect. */
+    private void handlePlayerConnect(@Nonnull PlayerConnectEvent event) {
+        PlayerRef playerRef = event.getPlayerRef();
+        if (!playerRef.hasPermission(adminPermission)) {
+            return; // pas concerne par /blockregen admin : pas de rappel
+        }
+        sendAdminBypassNotification(playerRef, hasAdminBypass(playerRef.getUuid()));
+    }
+
+    /**
+     * Sends the yellow chat message + on-screen notification confirming this player's current admin
+     * bypass state (used both when they toggle it via /blockregen admin and as a reminder on connect).
+     */
+    public void sendAdminBypassNotification(@Nonnull PlayerRef playerRef, boolean enabled) {
+        String titleKey = enabled ? BlockRegenMessages.ADMIN_BYPASS_ON_TITLE : BlockRegenMessages.ADMIN_BYPASS_OFF_TITLE;
+        String detailKey = enabled ? BlockRegenMessages.ADMIN_BYPASS_ON : BlockRegenMessages.ADMIN_BYPASS_OFF;
+
+        playerRef.sendMessage(Message.translation(titleKey)
+            .insert(" - ")
+            .insert(Message.translation(detailKey))
+            .color("#FFFF00"));
+
+        NotificationUtil.sendNotification(
+            playerRef.getPacketHandler(),
+            Message.translation(titleKey),
+            Message.translation(detailKey),
+            NotificationStyle.Warning
+        );
+    }
+
     /** Permission node required to see the block regen ghost previews (auto-generated: base permission + ".ghosts"). */
     public String getGhostPermission() {
         return ghostPermission;
@@ -625,8 +671,8 @@ public class BlockRegenPlugin extends JavaPlugin {
     private record PositionKey(World world, int x, int y, int z) {
     }
 
-    /** Regeneration en attente a une position : tache planifiee + marqueur fantome associe. */
-    private record ActiveRegen(Future<?> future, @Nullable Ref<EntityStore> ghostRef) {
+    /** Regeneration en attente a une position : tache planifiee + entites fantome associees. */
+    private record ActiveRegen(Future<?> future, @Nullable BlockRegenListener.GhostEntities ghosts) {
     }
 
     /**

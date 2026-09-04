@@ -62,8 +62,8 @@ message.ghostNameplate = {block}: regenerates in {duration}
 # lets an admin toggle a personal bypass so their own placements stay
 # eligible for regeneration (e.g. to rebuild an ore vein or a decoration).
 message.onlyPlayerCanAdmin = Only a player can toggle admin bypass mode.
-message.adminBypassOnTitle = Admin bypass: ON
-message.adminBypassOffTitle = Admin bypass: OFF
+message.adminBypassOnTitle = BlockRegen: Admin bypass ON
+message.adminBypassOffTitle = BlockRegen: Admin bypass OFF
 message.adminBypassOn = Blocks you place from now on will still be able to regenerate.
 message.adminBypassOff = Blocks you place from now on will NOT regenerate (anti-abuse protection).
 

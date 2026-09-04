@@ -1,11 +1,9 @@
 package com.nopefr.blockregen;
 
-import com.hypixel.hytale.protocol.packets.interface_.NotificationStyle;
 import com.hypixel.hytale.server.core.Message;
 import com.hypixel.hytale.server.core.command.system.AbstractCommand;
 import com.hypixel.hytale.server.core.command.system.CommandContext;
 import com.hypixel.hytale.server.core.universe.PlayerRef;
-import com.hypixel.hytale.server.core.util.NotificationUtil;
 
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
@@ -41,21 +39,7 @@ public class BlockRegenAdminCommand extends AbstractCommand {
 
         PlayerRef senderPlayerRef = context.senderAs(PlayerRef.class);
         boolean enabled = plugin.toggleAdminBypass(senderPlayerRef.getUuid());
-
-        String titleKey = enabled ? BlockRegenMessages.ADMIN_BYPASS_ON_TITLE : BlockRegenMessages.ADMIN_BYPASS_OFF_TITLE;
-        String detailKey = enabled ? BlockRegenMessages.ADMIN_BYPASS_ON : BlockRegenMessages.ADMIN_BYPASS_OFF;
-
-        senderPlayerRef.sendMessage(Message.translation(titleKey)
-            .insert(" - ")
-            .insert(Message.translation(detailKey))
-            .color("#FFFF00"));
-
-        NotificationUtil.sendNotification(
-            senderPlayerRef.getPacketHandler(),
-            Message.translation(titleKey),
-            Message.translation(detailKey),
-            NotificationStyle.Warning
-        );
+        plugin.sendAdminBypassNotification(senderPlayerRef, enabled);
 
         return CompletableFuture.completedFuture(null);
     }
