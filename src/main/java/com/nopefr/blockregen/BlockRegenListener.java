@@ -137,7 +137,22 @@ public class BlockRegenListener extends EntityEventSystem<EntityStore, BreakBloc
         world.execute(() -> {
             BlockType blockType = BlockType.fromString(record.blockId());
             if (blockType == null || blockType == BlockType.EMPTY) {
-                return; // ce type de bloc n'existe plus (mod retire, id invalide...) : rien a faire
+                // Ce type de bloc n'existe plus (mod retire, id invalide...) : rien a
+                // restaurer, mais on nettoie l'enregistrement pour ne pas le retenter indefiniment.
+                plugin.removePendingRegenRecord(world, record.x(), record.y(), record.z());
+                return;
+            }
+
+            // Si un bloc occupe deja cette position (ex: le monde a rechargee avec le
+            // bloc casse jamais ecrit sur disque avant l'arret), la regeneration n'a
+            // plus lieu d'etre : on nettoie simplement l'enregistrement, sans fantome
+            // ni planification - sinon on se retrouve avec un fantome fige flottant
+            // au-dessus d'un bloc deja bien present.
+            WorldChunk existingChunk = world.getChunk(ChunkUtil.indexChunkFromBlock(record.x(), record.z()));
+            BlockType existing = existingChunk != null ? existingChunk.getBlockType(record.x(), record.y(), record.z()) : null;
+            if (existing != null && existing != BlockType.EMPTY) {
+                plugin.removePendingRegenRecord(world, record.x(), record.y(), record.z());
+                return;
             }
 
             int delaySeconds = (int) Math.max(0, (record.respawnAtMillis() - System.currentTimeMillis()) / 1000);

@@ -224,7 +224,28 @@ public class BlockRegenPlugin extends JavaPlugin {
 
     @Override
     protected void shutdown() {
+        // Les taches de regeneration planifiees sont deja annulees automatiquement
+        // par le TaskRegistry, mais ca n'enleve pas les marqueurs fantomes deja
+        // apparus dans le monde : sans ca, un fantome resterait fige (plus
+        // rafraichi) et visible en double avec le vrai bloc au prochain demarrage
+        // qui replanifie la meme regeneration depuis le fichier persiste.
+        despawnAllTrackedGhosts();
         getLogger().at(Level.INFO).log("BlockRegen disabled.");
+    }
+
+    private void despawnAllTrackedGhosts() {
+        for (PendingGhost pending : pendingGhosts) {
+            World world = pending.world();
+            Ref<EntityStore> ghostRef = pending.ghostRef();
+            if (world.isAlive() && ghostRef.isValid()) {
+                world.execute(() -> {
+                    if (ghostRef.isValid()) {
+                        world.getEntityStore().getStore().removeEntity(ghostRef, RemoveReason.REMOVE);
+                    }
+                });
+            }
+        }
+        pendingGhosts.clear();
     }
 
     /** Enregistre ou met a jour une regle de regeneration pour un type de bloc, et la persiste. */

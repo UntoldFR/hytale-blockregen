@@ -2,6 +2,20 @@
 
 All notable changes to the plugin are documented here.
 
+## [1.2.3]
+
+### Fixed
+- Fixed a duplicated block/ghost after a restart (notably singleplayer,
+  where leaving a world stops its server): if the world reloaded with
+  the broken block still present (its removal hadn't been flushed to
+  disk before shutdown) while BlockRegen's own save had already
+  recorded the pending regeneration, a ghost preview would reappear
+  frozen on top of the already-present real block. Restoring a pending
+  regeneration now checks the block is actually still missing first.
+- The plugin now properly despawns any still-visible ghost previews
+  when it shuts down, instead of leaving them behind to potentially
+  resurface stuck on a later restart.
+
 ## [1.2.2]
 
 ### Fixed
