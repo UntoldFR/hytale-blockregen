@@ -24,12 +24,11 @@ import com.hypixel.hytale.server.core.universe.world.storage.EntityStore;
 import javax.annotation.Nonnull;
 import javax.annotation.Nullable;
 import java.util.ArrayList;
-import java.util.Comparator;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.TreeSet;
 
 /**
  * Custom UI window opened by "/blockregen list" (player-only). Shows every
@@ -139,7 +138,14 @@ public class BlockRegenListPage extends InteractiveCustomUIPage<BlockRegenListPa
      * list is not resent on every list refresh).
      */
     private void buildAddSection(@Nonnull UICommandBuilder commandBuilder, @Nonnull UIEventBuilder eventBuilder) {
-        refreshAddBlockEntries(commandBuilder);
+        List<DropdownEntryInfo> blockEntries = new ArrayList<>();
+        for (String blockId : BlockType.getAssetMap().getAssetMap().keySet()) {
+            if (blockId != null) {
+                blockEntries.add(new DropdownEntryInfo(displayLabel(blockId), blockId));
+            }
+        }
+        blockEntries.sort((a, b) -> a.value().compareToIgnoreCase(b.value()));
+        commandBuilder.set("#AddBlock.Entries", blockEntries);
         commandBuilder.set("#AddBlock.TooltipText", Message.translation(BlockRegenMessages.UI_TOOLTIP_PICK_BLOCK));
         commandBuilder.set("#AddDelay.TooltipText", Message.translation(BlockRegenMessages.UI_TOOLTIP_ADD_DELAY));
         commandBuilder.set("#AddRadius.TooltipText", Message.translation(BlockRegenMessages.UI_TOOLTIP_ADD_RADIUS));
@@ -155,31 +161,6 @@ public class BlockRegenListPage extends InteractiveCustomUIPage<BlockRegenListPa
             new EventData().append("@AddBlockId", "#AddBlock.Value").append("@AddDelay", "#AddDelay.Value").append("@AddRadius", "#AddRadius.Value"),
             false
         );
-    }
-
-    /**
-     * Rebuilds the "add a new rule" block-picker dropdown entries. Blocks that already have a rule in the
-     * currently selected scope (see {@link #rowBlockIdsForCurrentScope}) get a "[Set] " label prefix plus a
-     * tooltip, so a long list stays easy to scan without relying on color alone. Refreshed on every interaction
-     * (not just once) since "already configured" is scope-relative and must stay accurate when switching
-     * Global/area or after adding/removing a rule.
-     */
-    private void refreshAddBlockEntries(@Nonnull UICommandBuilder commandBuilder) {
-        Set<String> configuredBlockIds = rowBlockIdsForCurrentScope();
-        LocalizableString alreadySetTooltip = LocalizableString.fromString(tooltipText(BlockRegenMessages.UI_TOOLTIP_ADD_BLOCK_ALREADY_SET));
-
-        List<DropdownEntryInfo> blockEntries = new ArrayList<>();
-        for (String blockId : BlockType.getAssetMap().getAssetMap().keySet()) {
-            if (blockId == null) {
-                continue;
-            }
-            boolean configured = configuredBlockIds.contains(blockId);
-            blockEntries.add(configured
-                ? new DropdownEntryInfo(displayLabel(blockId, true), blockId, alreadySetTooltip)
-                : new DropdownEntryInfo(displayLabel(blockId, false), blockId));
-        }
-        blockEntries.sort((a, b) -> a.value().compareToIgnoreCase(b.value()));
-        commandBuilder.set("#AddBlock.Entries", blockEntries);
     }
 
     /** Rebuilds the single ON/OFF "need floor" toggle button of the "add a new rule" panel. */
@@ -231,11 +212,10 @@ public class BlockRegenListPage extends InteractiveCustomUIPage<BlockRegenListPa
      * Block ids to show as rows for the currently selected scope: the global rule set when Global
      * is selected; otherwise the selected area's own rule block ids, plus (unless that area is
      * marked Independent) every globally-configured block id too, so inherited rows show up.
-     * Membership only - callers that display these ids sort them separately (see {@link #buildList}).
      */
     @Nonnull
     private Set<String> rowBlockIdsForCurrentScope() {
-        Set<String> ids = new HashSet<>();
+        Set<String> ids = new TreeSet<>();
         if (selectedScope == null) {
             ids.addAll(plugin.getRules().keySet());
             return ids;
@@ -250,15 +230,12 @@ public class BlockRegenListPage extends InteractiveCustomUIPage<BlockRegenListPa
     private void buildList(@Nonnull UICommandBuilder commandBuilder, @Nonnull UIEventBuilder eventBuilder) {
         commandBuilder.clear("#BlockList");
 
-        List<String> blockIds = new ArrayList<>(rowBlockIdsForCurrentScope());
+        Set<String> blockIds = rowBlockIdsForCurrentScope();
         if (blockIds.isEmpty()) {
             commandBuilder.appendInline("#BlockList", "Label #EmptyLabel { Style: (Alignment: Center); }");
             commandBuilder.set("#BlockList #EmptyLabel.Text", Message.translation(BlockRegenMessages.UI_NO_BLOCK_CONFIGURED));
             return;
         }
-        // Sorted by the name actually shown in the row (not the raw block id), case-insensitively,
-        // so the list reads alphabetically the way the player sees it.
-        blockIds.sort(Comparator.comparing(BlockRegenListPage::displayName, String.CASE_INSENSITIVE_ORDER));
 
         int index = 0;
         for (String blockId : blockIds) {
@@ -425,28 +402,11 @@ public class BlockRegenListPage extends InteractiveCustomUIPage<BlockRegenListPa
         return blockType != null ? blockType.getItem() : null;
     }
 
-    /**
-     * Human-readable label for the "add a new rule" dropdown; falls back to the raw block id if it has no item.
-     * When {@code configured} is true (this block already has a rule in the current scope), the label is
-     * prefixed with a plain "[Set] " marker instead - there's no API to prepend literal text to a
-     * message-id-based (per-viewer translated) label, so only this already-configured subset falls back to a
-     * flattened plain-English name (see {@link #displayName}) to make room for the marker. Unconfigured blocks
-     * (the vast majority) keep full per-viewer translation.
-     */
+    /** Human-readable label for the "add a new rule" dropdown; falls back to the raw block id if it has no item. */
     @Nonnull
-    private static LocalizableString displayLabel(@Nonnull String blockId, boolean configured) {
+    private static LocalizableString displayLabel(@Nonnull String blockId) {
         Item item = resolveItem(blockId);
-        if (!configured) {
-            return item != null ? LocalizableString.fromMessageId(item.getTranslationKey()) : LocalizableString.fromString(blockId);
-        }
-        return LocalizableString.fromString("[Set] " + displayName(blockId));
-    }
-
-    /** Flattened, plain-English (server-side, not per-viewer translated) display name; falls back to the raw block id. */
-    @Nonnull
-    private static String displayName(@Nonnull String blockId) {
-        Item item = resolveItem(blockId);
-        return item != null ? Message.translation(item.getTranslationKey()).getAnsiMessage() : blockId;
+        return item != null ? LocalizableString.fromMessageId(item.getTranslationKey()) : LocalizableString.fromString(blockId);
     }
 
     @Override
@@ -500,7 +460,6 @@ public class BlockRegenListPage extends InteractiveCustomUIPage<BlockRegenListPa
         UICommandBuilder commandBuilder = new UICommandBuilder();
         UIEventBuilder eventBuilder = new UIEventBuilder();
         buildScopeSelector(commandBuilder, eventBuilder);
-        refreshAddBlockEntries(commandBuilder);
         buildAddUnitToggle(commandBuilder, eventBuilder);
         buildAddFloorToggle(commandBuilder, eventBuilder);
         if (listChanged) {

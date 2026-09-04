@@ -36,7 +36,6 @@ import javax.annotation.Nullable;
 import java.util.concurrent.ScheduledFuture;
 import java.util.concurrent.ThreadLocalRandom;
 import java.util.concurrent.TimeUnit;
-import java.util.function.Function;
 import java.util.logging.Level;
 import org.joml.Vector3d;
 import org.joml.Vector3i;
@@ -114,54 +113,23 @@ public class BlockRegenListener extends EntityEventSystem<EntityStore, BreakBloc
 
         int delaySeconds = rule.delaySeconds();
         long respawnAtMillis = System.currentTimeMillis() + delaySeconds * 1000L;
-        Ref<EntityStore> ghostRef = spawnGhost(store, holder -> commandBuffer.addEntity(holder, AddReason.SPAWN), x, y, z, brokenType, delaySeconds);
+        Ref<EntityStore> ghostRef = spawnGhost(store, commandBuffer, x, y, z, brokenType, delaySeconds);
         if (ghostRef != null) {
             plugin.trackPendingGhost(world, ghostRef, brokenType.getId(), respawnAtMillis);
         }
 
-        scheduleRegen(world, x, y, z, brokenType, delaySeconds, respawnAtMillis, rule.needFloor(), rule.radius(), ghostRef);
-    }
-
-    /**
-     * Replanifie une regeneration qui etait en attente avant le dernier arret
-     * du serveur/monde (voir BlockRegenPlugin#persistPendingRegenRecord et
-     * #start()). Appele depuis le thread du monde (voir world.execute() plus
-     * bas), donc PAS dans un gestionnaire d'evenement ECS : le fantome est
-     * donc ajoute directement via le Store (pas de CommandBuffer disponible
-     * ni necessaire ici).
-     */
-    public void rescheduleFromPersistedRecord(@Nonnull World world, @Nonnull BlockRegenPlugin.PendingRegenRecord record) {
-        if (!world.isAlive()) {
-            return;
-        }
-        world.execute(() -> {
-            BlockType blockType = BlockType.fromString(record.blockId());
-            if (blockType == null || blockType == BlockType.EMPTY) {
-                return; // ce type de bloc n'existe plus (mod retire, id invalide...) : rien a faire
-            }
-
-            int delaySeconds = (int) Math.max(0, (record.respawnAtMillis() - System.currentTimeMillis()) / 1000);
-            Store<EntityStore> store = world.getEntityStore().getStore();
-            Ref<EntityStore> ghostRef = spawnGhost(store, holder -> store.addEntity(holder, AddReason.SPAWN), record.x(), record.y(), record.z(), blockType, delaySeconds);
-            if (ghostRef != null) {
-                plugin.trackPendingGhost(world, ghostRef, record.blockId(), record.respawnAtMillis());
-            }
-
-            scheduleRegen(world, record.x(), record.y(), record.z(), blockType, delaySeconds, record.respawnAtMillis(), record.needFloor(), record.radius(), ghostRef);
-        });
+        scheduleRegen(world, x, y, z, brokenType, delaySeconds, rule.needFloor(), rule.radius(), ghostRef);
     }
 
     /**
      * Spawns a small, non-solid marker entity at the broken block's position with a floating countdown nameplate,
-     * visible only to permitted players. The entity is added via {@code adder} rather than a hardcoded Store/CommandBuffer
-     * call: from within an ECS event handler (a fresh break), the Store is mid-processing and mutations must go
-     * through the CommandBuffer instead; from a deferred world.execute() callback (restoring a persisted regen after
-     * a restart, no ECS event in progress), adding directly via the Store is required instead since there's no
-     * CommandBuffer available there. Both shapes are {@code Holder -> Ref}, see the two call sites.
+     * visible only to permitted players. Must go through the CommandBuffer (not Store directly): this runs from
+     * within an ECS event handler, while the Store is mid-processing, and Store's own mutation methods refuse to
+     * be called at that point.
      */
     @Nullable
     private Ref<EntityStore> spawnGhost(
-        @Nonnull Store<EntityStore> store, @Nonnull Function<Holder<EntityStore>, Ref<EntityStore>> adder, int x, int y, int z, @Nonnull BlockType blockType, int delaySeconds
+        @Nonnull Store<EntityStore> store, @Nonnull CommandBuffer<EntityStore> commandBuffer, int x, int y, int z, @Nonnull BlockType blockType, int delaySeconds
     ) {
         Holder<EntityStore> holder = store.getRegistry().newHolder();
         holder.addComponent(NetworkId.getComponentType(), new NetworkId(store.getExternalData().takeNextNetworkId()));
@@ -196,11 +164,11 @@ public class BlockRegenListener extends EntityEventSystem<EntityStore, BreakBloc
         holder.ensureComponent(UUIDComponent.getComponentType());
         holder.ensureComponent(Intangible.getComponentType());
 
-        return adder.apply(holder);
+        return commandBuffer.addEntity(holder, AddReason.SPAWN);
     }
 
     private void scheduleRegen(
-        World world, int x, int y, int z, BlockType blockType, int delaySeconds, long respawnAtMillis, boolean needFloor, int radius, @Nullable Ref<EntityStore> ghostRef
+        World world, int x, int y, int z, BlockType blockType, int delaySeconds, boolean needFloor, int radius, @Nullable Ref<EntityStore> ghostRef
     ) {
         @SuppressWarnings("unchecked")
         ScheduledFuture<Void> future = (ScheduledFuture<Void>) HytaleServer.SCHEDULED_EXECUTOR.schedule(
@@ -227,7 +195,6 @@ public class BlockRegenListener extends EntityEventSystem<EntityStore, BreakBloc
                             .log("Failed to regenerate block at (" + x + "," + y + "," + z + "): " + e.getMessage());
                     } finally {
                         plugin.untrackActiveRegen(world, x, y, z);
-                        plugin.removePendingRegenRecord(world, x, y, z);
                         removeGhost(world, ghostRef);
                     }
                 });
@@ -237,9 +204,6 @@ public class BlockRegenListener extends EntityEventSystem<EntityStore, BreakBloc
         );
 
         plugin.trackActiveRegen(world, x, y, z, future, ghostRef);
-        // Persiste sur disque pour survivre a un arret du serveur/monde avant
-        // que le delai soit ecoule (voir BlockRegenPlugin#start()).
-        plugin.persistPendingRegenRecord(world, x, y, z, blockType.getId(), respawnAtMillis, needFloor, radius);
 
         // Enregistre la tache pour qu'elle soit annulee automatiquement
         // si le plugin est desactive avant la fin du delai.
